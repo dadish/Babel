@@ -76,7 +76,7 @@ This method returns the page that was assigned as a translation for the given `$
 
 ##### Arguments
 The method accepts only one argument. The `$language` argument could be either a 
-`string`(the name of the language), or Language object.
+`string` (the name of the language), or Language object.
 
 ##### Return
 The method returns a `Page` object or `NullPage` if the translation is not available.
