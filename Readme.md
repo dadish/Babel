@@ -71,24 +71,24 @@ Babel creates couple useful methods and properties on `$page` object for you.
 ### translation Method
 This method returns the page that was assigned as a translation for the given `$language`.
 
-__Syntax__
+##### Syntax
 	`$page->translation($language);`
 
-__Arguments__
+##### Arguments
 The method accepts only one argument. The `$language` argument could be either a 
 `string`(the name of the language), or Language object.
 
-__Return__
+##### Return
 The method returns a `Page` object or `NullPage` if the translation is not available.
 
 ### translate Method
 This method will create a translation link to the given page if not already exists or 
 overwrite if otherwise.
 
-__Syntax__
+##### Syntax
 	`$page->translate($translation, $language);`
 
-__Arguments__
+##### Arguments
 The `$translation` argument should be either a `Page` object or `null`. If it 
 is `null` Babel will create a new page. Babel will always try to mirror the 
 language trees as close as possible. The location of the `$translation`
@@ -97,7 +97,7 @@ the translations of the parent pages of the `$page` object.
 The `$language` argument could be either the name of the language (`string`) 
 that you want to translate the `$page` to, or it's `Language` object.
 
-__Return__
+##### Return
 The method returns the `$page` object.
 
 
