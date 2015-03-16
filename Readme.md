@@ -68,7 +68,7 @@ new translations are needed.
 ## API
 Babel creates couple useful methods and properties on `$page` object for you.
 
-#### translation Method
+### translation Method
 This method returns the page that was assigned as a translation for the given `$language`.
 
 __Syntax__
@@ -81,7 +81,7 @@ The method accepts only one argument. The `$language` argument could be either a
 __Return__
 The method returns a `Page` object or `NullPage` if the translation is not available.
 
-#### translate Method
+### translate Method
 This method will create a translation link to the given page if not already exists or 
 overwrite if otherwise.
 
