@@ -72,7 +72,7 @@ Babel creates couple useful methods and properties on `$page` object for you.
 This method returns the page that was assigned as a translation for the given `$language`.
 
 ##### Syntax
-	`$page->translation($language);`
+	$page->translation($language);
 
 ##### Arguments
 The method accepts only one argument. The `$language` argument could be either a 
@@ -86,7 +86,7 @@ This method will create a translation link to the given page if not already exis
 overwrite if otherwise.
 
 ##### Syntax
-	`$page->translate($translation, $language);`
+	$page->translate($translation, $language);
 
 ##### Arguments
 The `$translation` argument should be either a `Page` object or `null`. If it 
