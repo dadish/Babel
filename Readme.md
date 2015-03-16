@@ -65,6 +65,11 @@ other and Babel will try to figure out where should the new pages be created whe
 new translations are needed.
 
 
+If you install babel on already established website, you could try to give a chance for Babel to guess and connect initial translations.
+The algoritm is obvious - Babel will start from the root of each language sections and try to find children pages on the same level with the same names (URI). 
+If it will find any in the given sections - it will assume they are connected and recursively dive deeper with the same intention. 
+
+
 ## API
 Babel creates couple useful methods and properties on `$page` object for you.
 
