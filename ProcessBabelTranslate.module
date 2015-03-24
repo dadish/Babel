@@ -117,7 +117,18 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$field->attr('value', __("Save"));
 		$form->add($field);
 
-		return $form->render();
+		$breadcrumbs = "";
+	
+		if ($input->get->modal) {
+			$breadcrumbs =	"<ul id='breadcrumb' class='bblbr-l'>";
+			foreach(wire('breadcrumbs') as $breadcrumb) {
+				$breadcrumbs .=  "\n\t\t\t\t<li class='bblbr-i'>$breadcrumb->title &gt;</li>";
+			}
+			$breadcrumbs .=  "\n\t\t\t\t<li class='bblbr-i'>$page->title</li>";
+			$breadcrumbs .= "</ul>";
+		}
+		
+		return $breadcrumbs . $form->render();
 	}
 
 	/**
