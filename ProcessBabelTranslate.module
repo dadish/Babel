@@ -1,0 +1,338 @@
+<?php
+
+/**
+ * ProcessBabelTranslate
+ * A helper module for Babel. Adds ui for managing Babel translations.
+ * 
+ * @author Nurguly Ashyrov <dadish@bushluk.com>
+ * @copyright Yakyn Labs
+ * @license MIT
+ */
+
+class ProcessBabelTranslate extends Process implements Module, ConfigurableModule {
+
+	/**
+	 * Storage for i18n strings.
+	 * In case if we use on of them more than once.
+	 */
+	protected $i18n = null;
+
+	static public function getDefaultData() {
+		$defaults = array(
+			'translateButton' => true,
+			'translateTab' => true
+		);
+		return $defaults;
+	}
+
+	/**
+	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
+	 *
+	 * @return array
+	 *
+	 */
+	public static function getModuleInfo() {
+		return array(
+			'title' => 'Babel Translate', 
+			'version' => 0, 
+			'summary' => _('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
+			'href' => 'http://bushluk.com',
+			'singular' => true,
+			'autoload' => false,
+			'icon' => 'language',
+			'requires' => 'Babel',
+			'page' => array(
+				'parent' => 'page',
+				'name' => 'babel-translate'
+				)
+			);
+	}
+
+	protected function fillUpI18n()
+	{
+		$this->i18n = array(
+			'remove_success'				=> __('Removed translation %2$s between `%1$s` and `%3$s`'),
+			'remove_failure'				=> __('Couldn\'t remove translation %2$s between `%1$s` and `%3$s`: %4$s'),
+			'add_success'						=> __('Added translation %2$s between `%1$s` and `%3$s`'),
+			'add_failure'						=> __('Couldn\'t add translation %2$s between `%1$s` and `%3$s`: %4$s'),
+			'translate'							=> __('translate')
+			);
+	}
+
+	/**
+	 *
+	 *
+	 *
+	 */
+	public function init()
+	{
+		parent::init();
+		$this->headline('Babel Translate');
+		$this->fillUpI18n();
+		$this->addHookAfter('ProcessPageEdit::buildForm', $this, 'hookLanguageTab');
+		$this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
+		$this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
+
+		// Quick access to Babel
+		$this->babel = wire('modules')->get('Babel');
+
+		// Make sure FancyBox plugin is loaded
+		wire('modules')->get('JqueryMagnific');
+	}
+
+	/**
+	 * 
+	 *
+	 *
+	 *
+	 */
+	public function ___execute()
+	{
+		$modules = wire('modules');
+		$input = wire('input');
+
+		// find the page first
+		$id = $input->id;
+		$id = (integer) wire('sanitizer')->text($id);
+		$page = wire('pages')->get($id);
+		
+		if ($page instanceof NullPage) return __("Unknown page to translate.");
+
+		// Overwrite the breadcrumbs
+		$this->setupBreadcrumbs($page);
+		$this->headline($page->get('headline|title'));
+
+		if (!$this->babel->translatable($page)) return __("This page cannot be translated via Babel.");
+
+		if ($input->post->submit_babel_translate) {
+			$this->updateLinks($page);
+		}
+
+		$form = $modules->get('InputfieldForm');
+		$form->attr('method', 'POST');
+		$form->attr('action', "./?id=$id");
+		$form->add($this->buildLanguageTab($page));
+
+		$field = $modules->get('InputfieldSubmit');
+		$field->attr('id+name', 'submit_babel_translate');
+		$field->attr('value', __("Save"));
+		$form->add($field);
+
+		return $form->render();
+	}
+
+	/**
+	 * Hook method that adds a Translation Tab for all pages that are managed by 
+	 * Babel. 
+	 */
+	protected function hookLanguageTab($event)
+	{
+		// Find out what page we are editing
+		$id = (int) $this->input->post('id');
+		if(!$id) $id = (int) $this->input->get('id');
+		$page = wire('pages')->get("id=$id");
+
+		// If page is not translatable by Babel then return
+		if (!$this->babel->translatable($page)) return;
+
+		$form = $event->arguments[0];
+		$processPageEdit = $event->object;
+		$translationTab = $this->buildLanguageTab($page);
+		$processPageEdit->addTab($translationTab->attr('id'), $translationTab->attr('title'));
+		$form->insertBefore($translationTab, $form->get('submit_save'));
+		$event->return = $form;
+	}
+
+	/**
+	 * Hook method. Adds a `Translate` action button.
+	 * 
+	 */
+	protected function hookActionButtons($event)
+	{
+		$value = $event->return;
+		$page = $event->arguments(0);
+		$pageName = $this->getModuleInfo()['page']['name'];
+		if (!$this->babel->translatable($page)) return;
+		$value[] = array(
+			'cn' => 'Babel',
+			'name' => $this->i18n['translate'],
+			'url' => "http://" . $this->config->httpHost . $this->config->urls->admin . "page/$pageName/?id=$page->id"
+			);
+		$event->return = $value;
+	}
+
+	/**
+	 * Builds a proper Translation Tab for a given Page. Should be able 
+	 * to use it for quick action button translation too.
+	 *
+	 * @param $object Page object. The Page for which the TranslationTab for.
+	 */
+	protected function buildLanguageTab(Page $object)
+	{
+		$modules = wire('modules');
+		$languages = wire('languages');
+		$wrapper = new InputfieldWrapper();
+		$id = $this->className();
+		$wrapper->attr('id', $id);
+		$title = $this->_('Translate'); // Tab Label: Translate
+		$wrapper->attr('title', $title); 
+
+		foreach ($this->babel->include as $l) {
+			$l = $languages->get($l);
+			if ($object->language === $l) continue;
+			$value = $object->translation($l);
+			if ($value !== null) $value = $value->id;
+			
+			// A language link
+			$field = $modules->get('InputfieldPage');
+			$field->inputfield = 'InputfieldPageListSelect';
+			$field->parent_id = $this->babel->getRoot($l)->id;
+
+			// If the $object is Root page then let user
+			// choose target out of context
+			if (
+				$object->is($this->babel->getRoot($object->language)->path) && 
+				!$object->parent instanceof NullPage
+			) {
+				$field->parent_id = $object->parent->id;
+			}
+			
+			$field->attr('name+id', "babel_object_$l->name");
+			$field->attr('value', $value);
+			$field->label = "$l->title";
+			$wrapper->add($field);
+
+			// If Babel should Overwrite target's language link
+			// to point it to this Page
+			$field = $modules->get('InputfieldCheckbox');
+			$field->label = __('Overwrite target');
+			$field->description = sprintf(__('In case if the target page already has a %1$s link that it points to. Should Babel overwrite it to point it to this Page?'), $object->language->title);
+			$field->attr('name+id', "babel_overwrite_$l->name");
+			$field->columnWidth = 50;
+			$wrapper->add($field);
+
+			// If Babel should Remove target's language link
+			// that points to this page if user is removing 
+			// the current language link
+			$field = $modules->get('InputfieldCheckbox');
+			$field->label = __('Remove target');
+			$field->description = sprintf(__('In case if the target page has a %1$s link that points to this Page. Should Babel remove it too?'), $object->language->title);
+			$field->attr('name+id', "babel_remove_$l->name");
+			$field->columnWidth = 50;
+			$wrapper->add($field);
+		}
+		return $wrapper;
+	}
+
+	/**
+	 * Updates the Babel links
+	 */
+	protected function updateLinks(Page $page)
+	{
+		$pages = wire('pages');
+		$input = wire('input');
+		$languages = wire('languages');
+
+		foreach ($this->babel->include as $l) {
+			$l = $languages->get($l);
+
+			// If page's language is $l
+			// then skip
+			if ($page->language === $l) continue;
+
+			// Get the input data
+			$object = $input->post("babel_object_$l->name");
+			$overwrite_object = $input->post("babel_overwrite_$l->name");
+			$remove_object = $input->post("babel_remove_$l->name");
+
+			// If the value is empty or cannot be finded
+			// remove translation $l for $page
+			if (!$object || $pages->get("id=$object") instanceof NullPage) {
+				
+				// Check if we actually have that link in babel_links table
+				$object = $page->translation($l);
+				if (!$object instanceof NullPage) {
+
+					// Try to remove the link and send message to the user 
+					// about the status of the removal
+					$i18n_str = $page->removeTranslation($l, $remove_object) ? 'success' : 'failure';
+					$this->message(sprintf($this->i18n["remove_$i18n_str"], $page->title, $object->language->title, $object->title));
+				} else {
+					continue;
+				}
+
+			// Create the link
+			} else {
+				$object = $pages->get("id=$object");
+				$i18n_str = $page->addTranslation($object, $overwrite_object) ? 'success' : 'failure';
+				$this->message(sprintf($this->i18n["add_$i18n_str"], $page->title, $object->language->title, $object->title));
+			}
+		}
+	}
+
+	/**
+	 * Hook method for updateLinks
+	 * Does nothing but proxying updateLinks
+	 * method to be callable with HookEvent argument
+	 *
+	 */
+	protected function hookUpdateLinks($event)
+	{
+		return $this->updateLinks($event->arguments(0));
+	}
+
+	/**
+	 * Overwrites the wire('breadcrumbs');
+	 * @param Page $page. The page for which the 
+	 *				breadcrumbs for.
+	 */
+	protected function setupBreadcrumbs($page)
+	{
+		wire('breadcrumbs')->removeAll();
+		foreach ($page->parents() as $b) {
+			$url = wire('config')->urls->admin . "page/?open=$b->id";
+			wire('breadcrumbs')->add(new Breadcrumb($url, $b->get('title|name')));
+		}
+	}
+
+	public function install()
+	{
+		parent::___install();
+		$pages = wire('pages');
+		$info = $this->getModuleInfo();
+		$name = $info['page']['name'];
+		$parent = wire('config')->adminRootPageID;
+		$parent = $pages->get("id=$parent");
+		$path = $parent->path . "page/$name/";
+		$pages->get($path)->addStatus(Page::statusHidden)->save();
+	}
+
+	/**
+	 * Returns configuration fields for Babel 
+	 */
+	static public function getModuleConfigInputfields(array $data)
+	{
+		$data = array_merge(self::getDefaultData(), $data);
+		$modules = wire('modules');
+		$form = new InputfieldWrapper();
+
+		$field = $modules->get("InputfieldCheckbox");
+		$field->attr('name', 'translateButton');
+		$field->attr('checked', $data['translateButton']);
+		$field->label = __("Translate Action Button");
+		$field->description = __('Wheather you want to have a `translate` action button for each page on PageList.');
+		$field->columnWidth = 50;
+		$form->add($field);
+
+		$field = $modules->get("InputfieldCheckbox");
+		$field->attr('name', 'translateTab');
+		$field->attr('checked', $data['translateTab']);
+		$field->label = __("Translate Action Button");
+		$field->description = __('Wheather you want to have a `Translate` tab for each page on PageEdit.');
+		$field->columnWidth = 50;
+		$form->add($field);
+
+		return $form;
+	}
+
+}

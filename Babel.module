@@ -1,0 +1,425 @@
+<?php
+
+/**
+ * Babel
+ * Provides functionality for section based multilingual sites on ProcessWire.
+ * 
+ * @author Nurguly Ashyrov <dadish@bushluk.com>
+ * @copyright Yakyn Labs
+ * @license MIT
+ */
+
+class Babel extends WireData implements Module, ConfigurableModule {
+
+	const table = 'babel_links';
+
+	/**
+	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
+	 *
+	 * @return array
+	 *
+	 */
+	public static function getModuleInfo() {
+
+		return array(
+			'title' => 'Babel', 
+			'version' => 0, 
+			'summary' => _('Provides functionality for section based multilingual sites on ProcessWire.'),
+			'href' => 'http://bushluk.com',
+			'singular' => true,
+			'autoload' => true, 
+			'icon' => 'language',
+			'installs' => 'ProcessBabelTranslate'
+			);
+	}
+
+	static public function getDefaultData() {
+		$defaults = array(
+			'include' => array()
+		);
+		foreach (wire('languages') as $l) $defaults['root_' . $l->name] = '';
+		return $defaults;
+	}
+
+	public function init()
+	{
+		$this->addHookProperty('Page::language', $this, 'pageLanguage');
+		$this->addHook('Page::translation', $this, 'pageTranslation');
+		$this->addHook('Page::translations', $this, 'pageTranslations');
+		$this->addHook('Page::addTranslation', $this, 'pageAddTranslation');
+		$this->addHook('Page::removeTranslation', $this, 'pageRemoveTranslation');
+		wire('modules')->get('ProcessBabelTranslate');
+	}
+
+	/**
+	 * Given a Page and a Language returns a Page that was 
+	 * linked to given Page or NullPage if not available
+	 * 
+	 * @param $subject Page object. The Page which you want a translation link for.
+	 * @param $language Language object. The Language type of the translation link.
+	 * @return Page if available, NullPage otherwise.
+	 */
+	protected function getObject(Page $subject, Language $language)
+	{
+		$table = self::table;
+		$pdo = wire('database');
+		$stmt = $pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id AND language_id=:language_id");
+		$stmt->execute(array(
+			'subject_id' => $subject->id,
+			'language_id' => $language->id
+			));
+		if (!$stmt->rowCount()) return new NullPage();
+		$object = $stmt->fetchAll(PDO::FETCH_OBJ)[0]->object_id;
+		return wire('pages')->get("id=$object");
+	}
+
+	/**
+	 * Returns translation Pages for all Language types for given page.
+	 * 
+	 * @param $page Page object. The Page which you want all translations for.
+	 * @return PageArray if available, NullPage otherwise.
+	 */
+	protected function getObjects(Page $subject)
+	{
+		$pages = wire('pages');
+		$languages = wire('languages');
+		$objects = new PageArray();
+		$table = self::table;
+		$pdo = wire('database');
+		$stmt = $pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id");
+		$stmt->execute(array('subject_id' => $subject->id));
+		if (!$stmt->rowCount()) return new NullPage();
+		while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
+			$objects->append($pages->get("id=$row->object_id"));
+		}
+		return $objects;
+	}
+
+	/**
+	 * Returns a Language object for given page
+	 * The Language is determined based on root Language page
+	 * that could be configured via module settings.
+	 * 
+	 * @param $object Page object.
+	 * @throws WireException 	 * Throws error if the Page is not a decsendent of any root Language pages
+	 * @return Language object.
+	 */
+	protected function getLanguage(Page $object)
+	{
+		$languages = wire('languages');
+		foreach ($this->include as $l) {
+			$l = $languages->get($l);
+			$root = $this->getRoot($l);
+			if ($object->is("has_parent=$root") || $object->is($root->path)) return $l;
+		}
+		throw new WireException("The page: `$object->id` is not managed by Babel");
+	}
+
+	/**
+	 * If the given page is managed by Babel? Can it be translated?
+	 * 
+	 * @param $page Page object.
+	 * @return boolean
+	 */
+	public function translatable(Page $page)
+	{
+		try{
+			$language = $this->getLanguage($page);
+		} catch (WireException $e) {
+			return false;
+		}
+		return $language instanceof Language;
+	}
+
+	/**
+	 * Hook property for all pages that is managed by Babel.
+	 * Returns a language for a given page
+	 * @param $event Hook Event.
+	 * @return Replaces a return value if $page is managed by Babel.
+	 */ 
+	protected function pageLanguage($event)
+	{
+		try {
+			$language = $this->getLanguage($event->object);
+		} catch (WireException $e) {
+			return;
+		}
+		$event->return = $language;
+	}
+
+	/**
+	 * Returns a root Language page for given Language
+	 * 
+	 * @param $language Language object. The language of the root Language
+	 * @throws WireException Throws error if the Language is not managed by Babel.
+	 * @return Page object.
+	 */
+	public function getRoot(Language $language)
+	{
+		if (!in_array($language->id, $this->include)) throw new WireException("The language $language->title is not managed by Babel.");
+		$root = "root_" . $language->name;
+		$path = $this->$root;
+		return wire('pages')->get($path);
+	}
+
+	/**
+	 * Creates a link from $subject to $object.
+	 * The $language of the link is determined by $object->language. 
+	 * Throws error if the language of $object and $subject match.
+	 *
+	 * @param $subject Page object. The Page from which the link points.
+	 * @param $object Page object. The Page to which the link points.
+	 * @throws WireException
+	 * @return boolean
+	 */
+	protected function addLink(Page $subject, Page $object)
+	{
+		// Subject and Object can not be in the same language
+		// section
+		if ($subject->language === $object->language) throw new WireException('The language for both $subject and $object cannot be the same.');
+
+		// A Page can have only one link per one language
+		// If $subject already have a link for $object->language
+		// remove it first
+		$oldObject = $this->getObject($subject, $object->language);
+		if (!$oldObject instanceof NullPage) {
+			$this->removeLink($subject, $oldObject);
+		}
+
+		// Update db
+		$table = self::table;
+		try {
+			$pdo = wire('database');
+			$stmt = $pdo->prepare("INSERT INTO $table(subject_id, language_id, object_id) VALUES(:subject_id, :language_id, :object_id)");
+
+			// Add link from subject to object
+			$stmt->execute(array(
+				'subject_id' => $subject->id,
+				'language_id' => $object->language->id,
+				'object_id' => $object->id
+				));
+
+			$result = (boolean) $stmt->rowCount();
+		} catch (PDOException $e) {
+			$result = false;
+		}
+		return $result;
+	}
+
+	/**
+	 * Removes a link from $subject to $object
+	 * Throws error if the is no link between $subject and $object
+	 * 
+	 * @param $subject Page object. The Page from which the link points.
+	 * @param $object Page object. The Page to which the link points.
+	 * @throws WireException
+	 * @return boolean True if link succesfully removed. False otherwise.
+	 */
+	protected function removeLink(Page $subject, Page $object)
+	{
+
+		// There should be a link between $subject and $object
+		// to be able to remove it
+		if ($this->getObject($subject, $object->language)->id !== $object->id) {
+			throw new WireException("There is no link between $object->title and $subject->title.");
+		}
+		
+		$table = self::table;
+		try {
+			$pdo = wire('database');
+			$stmt = $pdo->prepare("DELETE FROM $table WHERE subject_id=:subject_id AND language_id=:language_id AND object_id=:object_id");
+
+			// Remove link from subject to object
+			$stmt->execute(array(
+				'subject_id' => $subject->id,
+				'language_id' => $object->language->id,
+				'object_id' => $object->id
+				));
+
+			$result = (boolean) $stmt->rowCount();
+		} catch (PDOException $e) {
+			$result = false;
+		}
+		return $result;
+	}
+
+	/**
+	 * Returns a translation for page for given language
+	 * or NullPage if there isn't one.
+	 * 
+	 * @param string|int|Language The language of the translation.
+	 * 				if string assumes that it is a Language name
+	 * 				if integer assumes that it is an id of the Language
+	 *        also can be Language object itself
+	 */
+	public function pageTranslation($event)
+	{
+		$page = $event->object;
+		$language = $event->arguments(0);
+
+		// If $language is not a Language object
+		// Try to get language by name or id
+		if (!$language instanceof Language) $language = wire('languages')->get($language);
+		if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
+
+		$event->return = $this->getObject($page, $language);
+	}
+
+	/**
+	 * Returns all translations for page
+	 * or NullPage if there is any.
+	 * 
+	 */
+	public function pageTranslations($event)
+	{
+		$event->return = $this->getObjects($page);
+	}
+
+	/**
+	 * Translates $page. Adds a Babel link to given target.
+	 * If the target page has no link that points to the 
+	 * $pags's language then the reverse link will be created automatically.
+	 * 
+	 * @param Page $target. A page that you want to link to.
+	 * @param boolean $overwrite/$remove If the target page already have a
+	 *				translation from the $page's section should Babel
+	 *				overwrite that link to point it back to $page instaed
+	 * @return boolean If the translation is successfull or not.
+	 */
+	protected function pageAddTranslation($event)
+	{
+		$subject = $event->object;
+		$target = $event->arguments(0);
+		$overwrite = (boolean) $event->arguments(1);
+		$success = false;
+
+		// $target is not a Page and cannot get us a Page
+		// then throw an error
+		if ($target instanceof Page) $object = $target;
+		else $object = wire('pages')->get($target);
+		if (!$object instanceof Page) throw new WireException("Unknown Page `$target`.");
+
+		// Assuming $overwrite is false or not given
+		// If the target has no translation link for 
+		// $page's language then add it automatically
+		if (!$overwrite) $overwrite = $this->getObject($object, $subject->language) instanceof NullPage;
+
+		// Add a link
+		$success = $this->addLink($subject, $object);
+
+		// If the $overwrite is true then
+		// overwrite a reverse link also
+		if ($overwrite) $success = $this->addLink($object, $subject);
+
+		$event->return = $success;
+	}
+
+	/**
+	 * Removes a translation from the page.
+	 * @param string|int|Language What language link
+	 *				you wish to remove
+	 * @param boolean $remove If the translation
+	 * 				is pointing back to this page should Babel
+	 * 				remove that link too.
+	 * @return boolean. If the removal is successful or not.
+	 */
+	protected function pageRemoveTranslation($event)
+	{
+		$subject = $event->object;
+		$language = $event->arguments(0);
+		$remove = (boolean) $event->arguments(1);
+		$success = false;
+
+		if (!$language instanceof Language) $language = wire('languages')->get($language);
+		if (!$language instanceof Language) throw new WireException("Unknown Language `$language`.");
+
+		$object = $this->getObject($subject, $language);
+		if ($object instanceof NullPage) throw new WireException("Page $subject->title hasn't got a translation for $language->title language.");
+
+		// Remove the link
+		$success = $this->removeLink($subject, $object);
+
+		// Remove reverse link if asked and if there is one
+		if ($remove && $this->getObject($object, $subject->language)->id === $subject->id) {
+			$success = $this->removeLink($object, $subject);
+		}
+
+		$event->return = $success;
+	}
+
+	/**
+	 * Install Babel module
+	 */
+	public function install()
+	{
+		$table = self::table;
+		$pdo = wire('database');
+				
+		// Do not install if table already exists
+		$table_exists = true;
+		try {
+			$stmt = $pdo->query("SELECT * FROM $table");
+		} catch (PDOException $e) {
+			$table_exists = false;
+		}
+
+		if ($table_exists) {
+			$this->error(__("The table `$table` already exists in your database. Please rename or drop it before installing Babel again."));
+			return;
+		}
+
+		// Create table
+		$stmt = $pdo->exec("CREATE TABLE $table (
+			`subject_id` int(10) unsigned NOT NULL,
+			`language_id` int(10) unsigned NOT NULL,
+			`object_id` int(10) unsigned NOT NULL
+			) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
+		$this->message(__("Created table `$table` in database."));
+	}
+
+	/**
+	 * Returns configuration fields for Babel 
+	 */
+	static public function getModuleConfigInputfields(array $data)
+	{
+		$data = array_merge(self::getDefaultData(), $data);
+		$modules = wire('modules');
+		$form = new InputfieldWrapper();
+
+		$field = $modules->get("InputfieldCheckboxes");
+		$field->inputfield = 'InputfieldCheckboxes';
+		foreach (wire('languages') as $l) $field->addOption($l->id, $l->title);
+		$field->attr('name', 'include');
+		$field->attr('value', $data['include']);
+		$field->label = __("Translate languages");
+		$field->description = __('Which language links can be assigned to a page?');
+		$field->required = true;
+		$form->add($field);
+
+		foreach (wire('languages') as $l){
+			$name = "root_" . $l->name;
+			$field = $modules->get('InputfieldText');
+			$field->label = "Root for $l->title";
+			$field->description = "Path to root page of the $l->title language.";
+			$field->attr('name', $name);
+			$field->attr('value', $data[$name]);
+			$field->required = true;
+			$field->showIf = "include=$l->id";
+			$field->requiredIf = "include=$l->id";
+			$form->add($field);
+		}
+
+		return $form;
+	}
+
+	/**
+	 * Uninstall Babel module
+	 */
+	public function uninstall()
+	{
+		$table = self::table;
+		wire('database')->exec("DROP TABLE IF EXISTS $table");
+		$this->message(__("Dropped table `$table` from database."));
+	}
+}
