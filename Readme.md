@@ -18,15 +18,8 @@ section based multilanguage sites. It is inspired by [Babel Plugin][Babel MODX] 
 
 ## Settings
 
-First of all you should set the root page for each language. 
-
-Next choose the preferred way of translation of pages in the admin interface. 
-You can choose either to have an additional action button titled `translate` 
-for each page or have a `Translation` tab for each page when editing it. Or you 
-can choose to have both methods for translating a page.
-
-You will be able to either link already existing page as a translation or create 
-a new page that will automatically be linked as a translation.
+First of all you should set the root page for each language.
+![settings-language](readme/settings-languages.png "Language settings")
 
 Usually multilingual sites will have a structure like...
 
@@ -65,11 +58,6 @@ other and Babel will try to figure out where should the new pages be created whe
 new translations are needed.
 
 
-If you install babel on already established website, you could try to give a chance for Babel to guess and connect initial translations.
-The algoritm is obvious - Babel will start from the root of each language sections and try to find children pages on the same level with the same names (URI). 
-If it will find any in the given sections - it will assume they are connected and recursively dive deeper with the same intention. 
-
-
 ## API
 Babel creates couple useful methods and properties on `$page` object for you.
 
@@ -81,43 +69,62 @@ This method returns one page that was assigned as a translation for the given `$
 
 ##### Arguments
 The method accepts only one argument. The `$language` argument could be either a 
-`string` (the name of the language), or Language object.
+`string` (the name of the language), an `integer` (the id of the language) or a 
+Language object itself.
+
+##### Throws
+`WireException` if the language is not found or isn't handled by Babel.
 
 ##### Return
 The method returns a `Page` object or `NullPage` if the translation is not available.
 
 ### translations Method
 This method will return the pages that were assigned as a translation for all `$languages`.
+Or an empty `WireArray` if no translations are available.
 
 #####Syntax
-	$page->translations($languages);
-
-#####Arguments
-`$languages`. Default is `null`. Accepts array of strings, array of `Language` objects or 
-`WireArray` of `Language` objects. If `$languages` is empty then it returns all translations.
+	$page->translations();
 
 #####Return
 Returns `PageArray`.
 
-### translate Method
+### addTranslation Method
 This method will create a translation link to the given page if not already exists or 
 overwrite if otherwise.
 
 ##### Syntax
-	$page->translate($translation, $language);
+	$page->addTranslation($otherPage);
 
 ##### Arguments
-The `$translation` argument should be either a `Page` object or `null`. If it 
-is `null` Babel will create a new page. Babel will always try to mirror the 
-language trees as close as possible. The location of the `$translation`
-page will be determined based on the family settings of the templates and 
-the translations of the parent pages of the `$page` object.
-The `$language` argument could be either the name of the language (`string`) 
-that you want to translate the `$page` to, or it's `Language` object.
+The `$otherPage` argument should be a `Page` object. The language of the page
+will be determined by Babel itself based on under which language section the 
+page is located.
 
 ##### Return
-The method returns the `$page` object.
+`booleaan` if the translation link is created successfully or not.
 
+### removeTranslation Method
+The method removes a translation link between `$page` and `$otherPage`.
+
+#####Syntax
+	$page->removeTranslation($language, $remove);
+
+#####Arguments
+`$language` (`string|integer|Language`) The language link you wish to remove.
+`$remove` (`boolean`) If there is a reverse link that points back from the 
+translation to this page, should Babel remove it.
+
+#####Return
+`boolean` If the removal of the translation link is successful.
+
+### language Property
+Every page that is handled by Babel (those who are decendents of root pages that 
+you choose on Babel module's settings page) will have a `language` property that
+stores a `Language` object that they are assigned to. E.g. let say you have two 
+language sections for your site. English and Spanish. And two languages created
+on `Setup => Languages` also `English (default)` and `Spanish (es)`. Each page under
+English language section will have a property `language` that is a `Language` object
+of `Setup => Languages => English(default)`.
 
 ### Contents
 [TOC]

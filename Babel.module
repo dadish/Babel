@@ -247,10 +247,13 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * Returns a translation for page for given language
 	 * or NullPage if there isn't one.
 	 * 
-	 * @param string|int|Language The language of the translation.
-	 * 				if string assumes that it is a Language name
-	 * 				if integer assumes that it is an id of the Language
-	 *        also can be Language object itself
+	 * @param 	string|int|Language The language of the translation.
+	 * 					if string assumes that it is a Language name
+	 * 					if integer assumes that it is an id of the Language
+	 *        	also can be Language object itself
+	 * @throws  WireException If the language is not found or is not 
+	 *					handled by Babel
+	 * @return 	Page|NullPage Page if available and NullPage if not.
 	 */
 	public function pageTranslation($event)
 	{
@@ -261,6 +264,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		// Try to get language by name or id
 		if (!$language instanceof Language) $language = wire('languages')->get($language);
 		if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
+		if (!in_array($language->id, $this->includes)) throw new WireException("Language $language->name is not handled by Babel");
 
 		$event->return = $this->getObject($page, $language);
 	}
