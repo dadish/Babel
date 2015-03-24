@@ -264,7 +264,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		// Try to get language by name or id
 		if (!$language instanceof Language) $language = wire('languages')->get($language);
 		if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
-		if (!in_array($language->id, $this->includes)) throw new WireException("Language $language->name is not handled by Babel");
+		if (!in_array($language->id, $this->include)) throw new WireException("Language $language->name is not handled by Babel");
 
 		$event->return = $this->getObject($page, $language);
 	}
