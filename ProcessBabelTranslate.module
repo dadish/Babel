@@ -66,18 +66,17 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	 */
 	public function init()
 	{
+		// Quick access to Babel
+		$this->babel = wire('modules')->get('Babel');
+		if (!$this->babel) return;
+
+		// Make sure FancyBox plugin is loaded
+		wire('modules')->get('JqueryMagnific');
 		parent::init();
-		$this->headline('Babel Translate');
 		$this->fillUpI18n();
 		$this->addHookAfter('ProcessPageEdit::buildForm', $this, 'hookLanguageTab');
 		$this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
 		$this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
-
-		// Quick access to Babel
-		$this->babel = wire('modules')->get('Babel');
-
-		// Make sure FancyBox plugin is loaded
-		wire('modules')->get('JqueryMagnific');
 	}
 
 	/**
@@ -278,6 +277,11 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	 */
 	protected function hookUpdateLinks($event)
 	{
+		// Do nothing if we are not dealing with
+		// page edit or babel translate
+		$input = wire('input');
+		if (!$input->post->submit_save && !$input->post->submit_babel_translate) return;
+
 		return $this->updateLinks($event->arguments(0));
 	}
 

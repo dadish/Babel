@@ -395,6 +395,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$field->label = __("Translate languages");
 		$field->description = __('Which language links can be assigned to a page?');
 		$field->required = true;
+		$field->requiredIf = "uninstall=0";
 		$form->add($field);
 
 		foreach (wire('languages') as $l){
