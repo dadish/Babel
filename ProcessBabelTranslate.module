@@ -19,8 +19,9 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 
 	static public function getDefaultData() {
 		$defaults = array(
-			'translateButton' => true,
-			'translateTab' => true
+			'translateButton' => false,
+			'translateTab' => false,
+			'translateLinks' => false
 		);
 		return $defaults;
 	}
@@ -75,8 +76,9 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		parent::init();
 		$this->fillUpI18n();
 		$this->addHookAfter('ProcessPageEdit::buildForm', $this, 'hookLanguageTab');
-		$this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
-		$this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
+		if ($this->translateButton) $this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
+		if ($this->translateLinks) $this->addHookAfter('ProcessPageListRender::getPageLabel', $this, 'hookPageLabel');
+		if ($this->translateTab) $this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
 	}
 
 	/**
@@ -163,12 +165,36 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$page = $event->arguments(0);
 		$pageName = $this->getModuleInfo()['page']['name'];
 		if (!$this->babel->translatable($page)) return;
+		
 		$value[] = array(
 			'cn' => 'Babel',
 			'name' => $this->i18n['translate'],
 			'url' => "http://" . $this->config->httpHost . $this->config->urls->admin . "page/$pageName/?id=$page->id"
 			);
+
 		$event->return = $value;
+	}
+
+	/**
+	 * Hook method. Adds links to the PageListLabel.
+	 * 
+	 * 
+	 * 
+	 */
+	protected function hookPageLabel($event)
+	{
+		$label = $event->return;
+		$page = $event->arguments(0);
+		$links = $page->translations();
+		if (!$links->count()) return;
+		$label .= "<span class='bbl-links-indicator'>(";
+		foreach ($links as $p) {
+			$lang_name = $p->language->name;
+			$label .= "$lang_name";
+			if ($links->getNext($p) !== null) $label .= " ";
+		}
+		$label .= ")</span>";
+		$event->return = $label;
 	}
 
 	/**
@@ -342,8 +368,16 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$field = $modules->get("InputfieldCheckbox");
 		$field->attr('name', 'translateTab');
 		$field->attr('checked', $data['translateTab']);
-		$field->label = __("Translate Action Button");
+		$field->label = __("Translate Tab");
 		$field->description = __('Wheather you want to have a `Translate` tab for each page on PageEdit.');
+		$field->columnWidth = 50;
+		$form->add($field);
+
+		$field = $modules->get("InputfieldCheckbox");
+		$field->attr('name', 'translateLinks');
+		$field->attr('checked', $data['translateLinks']);
+		$field->label = __("PageList links");
+		$field->description = __('Wheather you want to have links of the translations on the admin Page List Tree.');
 		$field->columnWidth = 50;
 		$form->add($field);
 

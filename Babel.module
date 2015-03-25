@@ -88,7 +88,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$pdo = wire('database');
 		$stmt = $pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id");
 		$stmt->execute(array('subject_id' => $subject->id));
-		if (!$stmt->rowCount()) return new NullPage();
+		if (!$stmt->rowCount()) return $objects;
 		while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
 			$objects->append($pages->get("id=$row->object_id"));
 		}
@@ -276,7 +276,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 */
 	public function pageTranslations($event)
 	{
-		$event->return = $this->getObjects($page);
+		$event->return = $this->getObjects($event->object);
 	}
 
 	/**

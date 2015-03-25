@@ -1,21 +1,23 @@
 $(document).ready(function () {
 	
-	var cat, url;
-	
+	// Make Babel `translate`	action button dynamic.
+	// Meaning load the action as an iframe via magnific popup.
+	// Makes page translating much faster
+	var $translateButton, url;
 	$(document).on('click', '.PageListActionBabel a', function (e) {
 
-		cat = $(this);
-		if (!!cat.data('magnificPopup')) return;
+		$translateButton = $(this);
+		if (!!$translateButton.data('magnificPopup')) return;
 
 		e.preventDefault();
-		url = cat.attr('href');	
-		cat.attr('href', url + '&modal=1');
+		url = $translateButton.attr('href');	
+		$translateButton.attr('href', url + '&modal=1');
 
-		cat.magnificPopup({
+		$translateButton.magnificPopup({
 			type : 'iframe'
 		});
 
-		cat.trigger('click');
+		$translateButton.trigger('click');
 	});
-
+	
 });

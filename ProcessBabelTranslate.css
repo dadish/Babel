@@ -1,3 +1,7 @@
 .bblbr-i{
 	display : inline-block !important;
 }
+
+.bbl-links-indicator{
+	font-size : 0.7em;
+}
