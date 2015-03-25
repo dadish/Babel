@@ -190,7 +190,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$label .= "<span class='bbl-links-indicator'>(";
 		foreach ($links as $p) {
 			$lang_name = $p->language->name;
-			$label .= "$lang_name";
+			$label .= "$lang_name+";
 			if ($links->getNext($p) !== null) $label .= " ";
 		}
 		$label .= ")</span>";
