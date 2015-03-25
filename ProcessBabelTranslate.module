@@ -376,8 +376,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$field = $modules->get("InputfieldCheckbox");
 		$field->attr('name', 'translateLinks');
 		$field->attr('checked', $data['translateLinks']);
-		$field->label = __("PageList links");
-		$field->description = __('Wheather you want to have links of the translations on the admin Page List Tree.');
+		$field->label = __("PageList links indicator");
+		$field->description = __('Wheather you want to have links indicator of the translations on the admin Page List Tree. A little visual cue that states if pages has a translations assigned and which ones.');
 		$field->columnWidth = 50;
 		$form->add($field);
 
