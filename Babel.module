@@ -42,6 +42,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 	public function init()
 	{
+		$this->pdo = wire('database');
 		$this->addHookProperty('Page::language', $this, 'pageLanguage');
 		$this->addHook('Page::translation', $this, 'pageTranslation');
 		$this->addHook('Page::translations', $this, 'pageTranslations');
@@ -49,6 +50,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$this->addHook('Page::removeTranslation', $this, 'pageRemoveTranslation');
 		$this->addHookBefore('Pages::deleteReady', $this, 'cleanTranslations');
 		$this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
+		$this->addHookAfter('Languages::deleted', $this, 'cleanLanguage');
 		wire('modules')->get('ProcessBabelTranslate');
 	}
 
@@ -62,8 +64,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	protected function getObject(Page $subject, Language $language)
 	{
 		$table = self::table;
-		$pdo = wire('database');
-		$stmt = $pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id AND language_id=:language_id");
+		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id AND language_id=:language_id");
 		$stmt->execute(array(
 			'subject_id' => $subject->id,
 			'language_id' => $language->id
@@ -83,8 +84,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	protected function getSubject(Page $object, Language $language)
 	{
 		$table = self::table;
-		$pdo = wire('database');
-		$stmt = $pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id AND language_id=:language_id");
+		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id AND language_id=:language_id");
 		$stmt->execute(array(
 			'object_id' => $object->id,
 			'language_id' => $language->id
@@ -105,8 +105,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$pages = wire('pages');
 		$objects = new PageArray();
 		$table = self::table;
-		$pdo = wire('database');
-		$stmt = $pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id");
+		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id");
 		$stmt->execute(array('subject_id' => $subject->id));
 		if (!$stmt->rowCount()) return $objects;
 		while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
@@ -126,8 +125,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$pages = wire('pages');
 		$subjects = new PageArray();
 		$table = self::table;
-		$pdo = wire('database');
-		$stmt = $pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id");
+		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id");
 		$stmt->execute(array('object_id' => $object->id));
 		if (!$stmt->rowCount()) return $subjects;
 		while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
@@ -230,8 +228,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		// Update db
 		$table = self::table;
 		try {
-			$pdo = wire('database');
-			$stmt = $pdo->prepare("INSERT INTO $table(subject_id, language_id, object_id) VALUES(:subject_id, :language_id, :object_id)");
+			$stmt = $this->pdo->prepare("INSERT INTO $table(subject_id, language_id, object_id) VALUES(:subject_id, :language_id, :object_id)");
 
 			// Add link from subject to object
 			$stmt->execute(array(
@@ -260,8 +257,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	{		
 		$table = self::table;
 		try {
-			$pdo = wire('database');
-			$stmt = $pdo->prepare("DELETE FROM $table WHERE subject_id=:subject_id AND object_id=:object_id");
+			$stmt = $this->pdo->prepare("DELETE FROM $table WHERE subject_id=:subject_id AND object_id=:object_id");
 
 			// Remove link from subject to object
 			$stmt->execute(array(
@@ -406,17 +402,44 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Clean after language delete is needed.
+	 * 
+	 * 
+	 */
+	protected function cleanLanguage(HookEvent $event)
+	{
+		$language = $event->arguments(0);
+
+		// If Babel is not managing the language then return
+		if (!in_array($language->id, $this->include)) return;
+
+		$data = $this->getDefaultData();
+		foreach ($data as $key => $value) {
+			if ($key == "root_$language->name") continue;
+			$data[$key] = $this->$key;
+		}
+		$data['include'] = array();
+		foreach ($this->include as $include_item) if ($language->id != $include_item) $data['include'][] = $include_item;
+		$this->modules->saveModuleConfigData($this->className, $data);
+		$this->include = $data['include'];
+
+		$table = self::table;
+		$stmt = $this->pdo->prepare("DELETE FROM $table WHERE language_id=:language_id");
+		$stmt->execute(array('language_id' => $language->id));
+		$this->message(sprintf(__('Deleted %1$s translation links for %2$s language'), $stmt->rowCount(), $language->title));
+	}
+
+	/**
 	 * Install Babel module
 	 */
 	public function install()
 	{
 		$table = self::table;
-		$pdo = wire('database');
 				
 		// Do not install if table already exists
 		$table_exists = true;
 		try {
-			$stmt = $pdo->query("SELECT * FROM $table");
+			$stmt = $this->pdo->query("SELECT * FROM $table");
 		} catch (PDOException $e) {
 			$table_exists = false;
 		}
@@ -427,7 +450,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		}
 
 		// Create table
-		$stmt = $pdo->exec("CREATE TABLE $table (
+		$stmt = $this->pdo->exec("CREATE TABLE $table (
 			`subject_id` int(10) unsigned NOT NULL,
 			`language_id` int(10) unsigned NOT NULL,
 			`object_id` int(10) unsigned NOT NULL
@@ -478,7 +501,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	public function uninstall()
 	{
 		$table = self::table;
-		wire('database')->exec("DROP TABLE IF EXISTS $table");
+		$this->pdo->exec("DROP TABLE IF EXISTS $table");
 		$this->message(__("Dropped table `$table` from database."));
 	}
 }
