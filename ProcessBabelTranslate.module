@@ -42,6 +42,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			'autoload' => false,
 			'icon' => 'language',
 			'requires' => 'Babel',
+			'installs' => 'Babel',
 			'page' => array(
 				'parent' => 'page',
 				'name' => 'babel-translate'
@@ -53,9 +54,11 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	{
 		$this->i18n = array(
 			'remove_success'				=> __('Removed translation %2$s between `%1$s` and `%3$s`'),
-			'remove_failure'				=> __('Couldn\'t remove translation %2$s between `%1$s` and `%3$s`: %4$s'),
+			'remove_failure'				=> __('Couldn\'t remove translation %2$s between `%1$s` and `%3$s`.'),
 			'add_success'						=> __('Added translation %2$s between `%1$s` and `%3$s`'),
-			'add_failure'						=> __('Couldn\'t add translation %2$s between `%1$s` and `%3$s`: %4$s'),
+			'add_failure'						=> __('Couldn\'t add translation %2$s between `%1$s` and `%3$s`.'),
+			'create_success'				=> __('Created translation %2$s between `%1$s` and `%3$s`'),
+			'create_failure'				=> __('Couldn\'t create a %2$s translation page for `%1$s`.'),
 			'translate'							=> __('translate')
 			);
 	}
@@ -201,9 +204,9 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	 * Builds a proper Translation Tab for a given Page. Should be able 
 	 * to use it for quick action button translation too.
 	 *
-	 * @param $object Page object. The Page for which the TranslationTab for.
+	 * @param $subject Page object. The Page for which the TranslationTab for.
 	 */
-	protected function buildLanguageTab(Page $object)
+	protected function buildLanguageTab(Page $subject)
 	{
 		$modules = wire('modules');
 		$languages = wire('languages');
@@ -215,49 +218,99 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 
 		foreach ($this->babel->include as $l) {
 			$l = $languages->get($l);
-			if ($object->language === $l) continue;
-			$value = $object->translation($l);
-			if ($value !== null) $value = $value->id;
+			if ($subject->language === $l) continue;
+			$value = $subject->translation($l);
+
+			// Open a fieldSet
+			$fieldset = $modules->get('InputfieldFieldset');
+			$fieldset->name = "babel_$l->name";
+			$fieldset->label = $l->title;
+			$fieldset->collapsed = Inputfield::collapsedNo;
+
+			// Cretae new page
+			$field = $modules->get('InputfieldRadios');
+			$field->name = "babel_type_$l->name";
+			$field->label = __('Translate by...');
+			$field->addOptions(array(
+				'existing' => __('Choosing existing page'),
+				'new' => __('Creating new one')
+				));
+			if (!$value instanceof NullPage) $field->value = 'existing';
+			$fieldset->add($field);
 			
 			// A language link
 			$field = $modules->get('InputfieldPage');
 			$field->inputfield = 'InputfieldPageListSelect';
 			$field->parent_id = $this->babel->getRoot($l)->id;
 
-			// If the $object is Root page then let user
+			// If the $subject is Root page then let user
 			// choose target out of context
 			if (
-				$object->is($this->babel->getRoot($object->language)->path) && 
-				!$object->parent instanceof NullPage
+				$subject->is($this->babel->getRoot($subject->language)->path) && 
+				!$subject->parent instanceof NullPage
 			) {
-				$field->parent_id = $object->parent->id;
+				$field->parent_id = $subject->parent->id;
 			}
 			
-			$field->attr('name+id', "babel_object_$l->name");
+			$field->name = "babel_object_$l->name";
 			$field->attr('value', $value);
-			$field->label = "$l->title";
-			$wrapper->add($field);
+			$field->label = __("Target");
+			$field->showIf = "babel_type_$l->name=existing";
+			$fieldset->add($field);
 
 			// If Babel should Overwrite target's language link
 			// to point it to this Page
 			$field = $modules->get('InputfieldCheckbox');
 			$field->label = __('Overwrite target');
-			$field->description = sprintf(__('In case if the target page already has a %1$s link that it points to. Should Babel overwrite it to point it to this Page?'), $object->language->title);
-			$field->attr('name+id', "babel_overwrite_$l->name");
+			$field->description = sprintf(__('In case if the target page already has a %1$s link that it points to. Should Babel overwrite it to point it to this Page?'), $subject->language->title);
+			$field->name = "babel_overwrite_$l->name";
+			$field->showIf = "babel_type_$l->name=existing";
 			$field->columnWidth = 50;
-			$wrapper->add($field);
+			$fieldset->add($field);
 
 			// If Babel should Remove target's language link
 			// that points to this page if user is removing 
 			// the current language link
 			$field = $modules->get('InputfieldCheckbox');
 			$field->label = __('Remove target');
-			$field->description = sprintf(__('In case if the target page has a %1$s link that points to this Page. Should Babel remove it too?'), $object->language->title);
-			$field->attr('name+id', "babel_remove_$l->name");
+			$field->description = sprintf(__('In case if the target page has a %1$s link that points to this Page. Should Babel remove it too?'), $subject->language->title);
+			$field->name = "babel_remove_$l->name";
 			$field->columnWidth = 50;
-			$wrapper->add($field);
+			$field->showIf = "babel_type_$l->name=existing";
+			$fieldset->add($field);
+
+			// Choose parent for new page
+			$field = $modules->get('InputfieldPage');
+			$field->inputfield = 'InputfieldPageListSelect';
+			$field->parent_id = $this->babel->getRoot($l)->id;
+			$field->name = "babel_parent_$l->name";
+			$field->label = __('Parent Page');
+			$field->description = __('Choose the parent for the new page');
+			$field->showIf = "babel_type_$l->name=new";
+			$field->value = $this->getClosestTranslatedParent($subject, $l);
+			$fieldset->add($field);
+
+			// Choose name for new page
+			$field = $modules->get('InputfieldName');
+			$field->name = "babel_name_$l->name";
+			$field->label = __('Page Name');
+			$field->description = __('Choose a name for your new page.');
+			$field->showIf = "babel_type_$l->name=new";
+			$fieldset->add($field);
+
+			$wrapper->add($fieldset);
 		}
 		return $wrapper;
+	}
+
+	protected function getClosestTranslatedParent(Page $page, Language $language)
+	{
+		$pages = $page->parents()->reverse();
+			foreach ($pages as $p) {
+				$translation = $p->translation($language);
+				if (!$translation instanceof NullPage) return $translation;
+			}
+		return $this->babel->getRoot($language);
 	}
 
 	/**
@@ -280,6 +333,25 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$object = $input->post("babel_object_$l->name");
 			$overwrite_object = $input->post("babel_overwrite_$l->name");
 			$remove_object = $input->post("babel_remove_$l->name");
+			$type = $input->post("babel_type_$l->name");
+			
+			// If user is trying to create a new page
+			// then make neccessary modifications 
+			if ($type === 'new') {
+				$overwrite_object = true;
+				$remove_object = true;
+				$parent = $input->post("babel_parent_$l->name");
+				$name = $input->post("babel_name_$l->name");
+
+				$object = new Page();
+				$object->of(false);
+				$object->template = $page->template;
+				$object->parent = $parent;
+				$object->name = $name;
+				$object->title = $name;
+				$object->save();
+				$object = $object->id;
+			}
 
 			// If the value is empty or cannot be finded
 			// remove translation $l for $page
@@ -301,7 +373,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			} else {
 				$object = $pages->get("id=$object");
 				$i18n_str = $page->addTranslation($object, $overwrite_object) ? 'success' : 'failure';
-				$this->message(sprintf($this->i18n["add_$i18n_str"], $page->title, $object->language->title, $object->title));
+				$i18n_str = ($type === 'new') ? "create_$i18n_str" : "add_$i18n_str";
+				$this->message(sprintf($this->i18n[$i18n_str], $page->title, $object->language->title, $object->title));
 			}
 		}
 	}

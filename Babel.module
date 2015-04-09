@@ -28,8 +28,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 			'href' => 'http://bushluk.com',
 			'singular' => true,
 			'autoload' => true, 
-			'icon' => 'language',
-			'installs' => 'ProcessBabelTranslate'
+			'icon' => 'language'
 			);
 	}
 
@@ -48,15 +47,16 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$this->addHook('Page::translations', $this, 'pageTranslations');
 		$this->addHook('Page::addTranslation', $this, 'pageAddTranslation');
 		$this->addHook('Page::removeTranslation', $this, 'pageRemoveTranslation');
+		$this->addHookBefore('Pages::deleteReady', $this, 'cleanTranslations');
+		$this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
 		wire('modules')->get('ProcessBabelTranslate');
 	}
 
 	/**
-	 * Given a Page and a Language returns a Page that was 
-	 * linked to given Page or NullPage if not available
+	 * Given a Subject and a Language returns an Object.
 	 * 
-	 * @param $subject Page object. The Page which you want a translation link for.
-	 * @param $language Language object. The Language type of the translation link.
+	 * @param Page $subject. The subject which you want an object for.
+	 * @param Language $language. The language of the object.
 	 * @return Page if available, NullPage otherwise.
 	 */
 	protected function getObject(Page $subject, Language $language)
@@ -74,15 +74,35 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	}
 
 	/**
-	 * Returns translation Pages for all Language types for given page.
+	 * Given an Object and a Language returns a Subject.
 	 * 
-	 * @param $page Page object. The Page which you want all translations for.
-	 * @return PageArray if available, NullPage otherwise.
+	 * @param Page $object. The object which you want a subject for.
+	 * @param Language $language. The language of the object.
+	 * @return Page if available, NullPage otherwise.
+	 */
+	protected function getSubject(Page $object, Language $language)
+	{
+		$table = self::table;
+		$pdo = wire('database');
+		$stmt = $pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id AND language_id=:language_id");
+		$stmt->execute(array(
+			'object_id' => $object->id,
+			'language_id' => $language->id
+			));
+		if (!$stmt->rowCount()) return new NullPage();
+		$subject = $stmt->fetchAll(PDO::FETCH_OBJ)[0]->subject_id;
+		return wire('pages')->get("id=$subject");
+	}
+
+	/**
+	 * Returns all objects for the given subject.
+	 * 
+	 * @param $subject Page object.
+	 * @return PageArray.
 	 */
 	protected function getObjects(Page $subject)
 	{
 		$pages = wire('pages');
-		$languages = wire('languages');
 		$objects = new PageArray();
 		$table = self::table;
 		$pdo = wire('database');
@@ -93,6 +113,27 @@ class Babel extends WireData implements Module, ConfigurableModule {
 			$objects->append($pages->get("id=$row->object_id"));
 		}
 		return $objects;
+	}
+
+	/**
+	 * Returns all subjects for the given object.
+	 * 
+	 * @param $object Page object.
+	 * @return PageArray.
+	 */
+	protected function getSubjects(Page $object)
+	{
+		$pages = wire('pages');
+		$subjects = new PageArray();
+		$table = self::table;
+		$pdo = wire('database');
+		$stmt = $pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id");
+		$stmt->execute(array('object_id' => $object->id));
+		if (!$stmt->rowCount()) return $subjects;
+		while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
+			$subjects->append($pages->get("id=$row->subject_id"));
+		}
+		return $subjects;
 	}
 
 	/**
@@ -137,7 +178,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @param $event Hook Event.
 	 * @return Replaces a return value if $page is managed by Babel.
 	 */ 
-	protected function pageLanguage($event)
+	protected function pageLanguage(HookEvent $event)
 	{
 		try {
 			$language = $this->getLanguage($event->object);
@@ -216,23 +257,15 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @return boolean True if link succesfully removed. False otherwise.
 	 */
 	protected function removeLink(Page $subject, Page $object)
-	{
-
-		// There should be a link between $subject and $object
-		// to be able to remove it
-		if ($this->getObject($subject, $object->language)->id !== $object->id) {
-			throw new WireException("There is no link between $object->title and $subject->title.");
-		}
-		
+	{		
 		$table = self::table;
 		try {
 			$pdo = wire('database');
-			$stmt = $pdo->prepare("DELETE FROM $table WHERE subject_id=:subject_id AND language_id=:language_id AND object_id=:object_id");
+			$stmt = $pdo->prepare("DELETE FROM $table WHERE subject_id=:subject_id AND object_id=:object_id");
 
 			// Remove link from subject to object
 			$stmt->execute(array(
 				'subject_id' => $subject->id,
-				'language_id' => $object->language->id,
 				'object_id' => $object->id
 				));
 
@@ -255,7 +288,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 *					handled by Babel
 	 * @return 	Page|NullPage Page if available and NullPage if not.
 	 */
-	public function pageTranslation($event)
+	protected function pageTranslation(HookEvent $event)
 	{
 		$page = $event->object;
 		$language = $event->arguments(0);
@@ -274,7 +307,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * or NullPage if there is any.
 	 * 
 	 */
-	public function pageTranslations($event)
+	protected function pageTranslations(HookEvent $event)
 	{
 		$event->return = $this->getObjects($event->object);
 	}
@@ -290,7 +323,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 *				overwrite that link to point it back to $page instaed
 	 * @return boolean If the translation is successfull or not.
 	 */
-	protected function pageAddTranslation($event)
+	protected function pageAddTranslation(HookEvent $event)
 	{
 		$subject = $event->object;
 		$target = $event->arguments(0);
@@ -327,7 +360,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * 				remove that link too.
 	 * @return boolean. If the removal is successful or not.
 	 */
-	protected function pageRemoveTranslation($event)
+	protected function pageRemoveTranslation(HookEvent $event)
 	{
 		$subject = $event->object;
 		$language = $event->arguments(0);
@@ -349,6 +382,27 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		}
 
 		$event->return = $success;
+	}
+
+	/**
+	 * Cleans all the translation connections to
+	 * and from the page.
+	 * @param Page $page. The Page that you want to clean after.
+	 * @return boolean. If successfully cleaned or not.
+	 */
+	protected function cleanTranslations(HookEvent $event)
+	{
+		$page = $event->arguments(0);
+		$success = true;
+		foreach($this->getSubjects($page) as $subject) {
+			if (!$this->removeLink($subject, $page)) {
+				$success = false;
+				$this->message(sprintf(__('Couldn\'t remove translation link between %1$s and %2$s'), $page->title, $subject->title));
+			} else {
+				$this->message(sprintf(__('Removed translation link between %1$s and %2$s'), $page->title, $subject->title));
+			}
+		}
+		return $success;
 	}
 
 	/**
