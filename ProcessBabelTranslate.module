@@ -35,7 +35,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Babel Translate', 
-			'version' => 001, 
+			'version' => '002', 
 			'summary' => _('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
 			'href' => 'http://bushluk.com',
 			'singular' => true,
