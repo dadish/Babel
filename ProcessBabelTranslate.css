@@ -5,3 +5,7 @@
 .bbl-links-indicator{
 	font-size : 0.4em;
 }
+
+.ProcessBabelTranslate-progress{
+	display: none;
+}

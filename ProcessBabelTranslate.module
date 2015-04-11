@@ -82,15 +82,63 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		if ($this->translateButton) $this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
 		if ($this->translateLinks) $this->addHookAfter('ProcessPageListRender::getPageLabel', $this, 'hookPageLabel');
 		if ($this->translateTab) $this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
+
+		$this->setJsSettings();
 	}
 
 	/**
+	 * Sets the JavaScript configurations
 	 * 
+	 * 
+	 */
+	protected function setJsSettings()
+	{
+		$settings = array();
+		$input = wire('input');
+		$languages = wire('languages');
+
+		// Set prefixes of the languages that are managed by Babel
+		$settings['languages'] = array();
+		foreach ($this->babel->include as $l) {
+			$language = $languages->get($l);
+			$settings['languages'][] = array(
+				'id' => $language->id,
+				'name' => $language->name
+				);
+		}
+
+		$settings['pageId'] = $input->get->id;
+		$this->config->js($this->className, $settings);
+	}
+
+	/**
+	 * ProcessExecute method
+	 * 
+	 */
+	public function execute()
+	{
+		switch (wire('input')->get->action) {
+			case 'translate':
+				return $this->executeTranslate();
+				break;
+
+			case 'fieldObject':
+				return $this->executeFieldObject();
+				break;
+			
+			default:
+				return __("No action defined.");
+				break;
+		}
+	}
+
+	/**
+	 * Handles page translation
 	 *
 	 *
 	 *
 	 */
-	public function ___execute()
+	public function ___executeTranslate()
 	{
 		$modules = wire('modules');
 		$input = wire('input');
@@ -137,6 +185,63 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	}
 
 	/**
+	 * Handles change of the object field
+	 * 
+	 */
+	protected function executeFieldObject()
+	{
+		$input = wire('input');
+		$pages = wire('pages');
+		$languages = wire('languages');
+		
+		$subject = $pages->get($input->get->id);
+		$objectId = $input->get->object;
+		$language = $languages->get($input->get->language);
+
+		$out = array();
+		$out['action'] = 'fieldObject';
+		$out['follow'] = 'dependency';
+		$out['hiddenValue'] = '';
+		$out['inputfieldId'] = '';
+		$out['replace'] = array();
+
+		// If the objectId is 0 then the user trying to remove
+		// the object. See if the object is pointing back to our 
+		// subject as an object. If so provide user of removing that
+		// link too
+		if ($objectId == 0) {
+			$objectObject = $subject->translation($language)->translation($subject->language);
+			if ($subject->id === $objectObject->id) {
+				$out['hiddenValue'] = 'remove';
+				$out['inputfieldId'] = "wrap_Inputfield_babel_remove";
+				$out['replace'] = array(
+					'target_title' => $objectObject->title,
+					);
+			}
+		}
+		
+		// If the object already has a translation
+		// and it is not the $subject then provide user 
+		// an option to overwrite objects translation
+		$object = $pages->get($objectId);
+		$objectObject = $object->translation($subject->language);
+		if (!$objectObject instanceof NullPage && $subject->id !== $objectObject->id) {
+			$out['hiddenValue'] = 'overwrite';
+			$out['inputfieldId'] = 'wrap_Inputfield_babel_overwrite';
+			$out['replace'] = array(
+				'object' => $object->title,
+				'object_object' => $objectObject->title
+				);
+		}
+
+		if (!isset($out['hiddenValue'])) {
+			$out['dependency'] = 'blob';
+		}
+
+		return json_encode($out);
+	}
+
+	/**
 	 * Hook method that adds a Translation Tab for all pages that are managed by 
 	 * Babel. 
 	 */
@@ -172,7 +277,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$value[] = array(
 			'cn' => 'Babel',
 			'name' => $this->i18n['translate'],
-			'url' => "http://" . $this->config->httpHost . $this->config->urls->admin . "page/$pageName/?id=$page->id"
+			'url' => "http://" . $this->config->httpHost . $this->config->urls->admin . "page/$pageName/?action=translate&id=$page->id"
 			);
 
 		$event->return = $value;
@@ -227,10 +332,11 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$fieldset->label = $l->title;
 			$fieldset->collapsed = Inputfield::collapsedNo;
 
-			// Cretae new page
+			// Create new page or choose existing
 			$field = $modules->get('InputfieldRadios');
 			$field->name = "babel_type_$l->name";
 			$field->label = __('Translate by...');
+			$field->required = true;
 			$field->addOptions(array(
 				'existing' => __('Choosing existing page'),
 				'new' => __('Creating new one')
@@ -258,25 +364,30 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->showIf = "babel_type_$l->name=existing";
 			$fieldset->add($field);
 
+			// The field is there to control the visibility of
+			// available options when changing the object value
+			$field = $this->modules->get('InputfieldHidden');
+			$field->name = "babel_hidden_$l->name";
+			$field->attr('value', 'blob');
+			$fieldset->add($field);
+
 			// If Babel should Overwrite target's language link
 			// to point it to this Page
-			$field = $modules->get('InputfieldCheckbox');
-			$field->label = __('Overwrite target');
-			$field->description = sprintf(__('In case if the target page already has a %1$s link that it points to. Should Babel overwrite it to point it to this Page?'), $subject->language->title);
+			$field = $this->modules->get('InputfieldCheckbox');
+			$field->label = __('Overwrite');
+			$field->description = sprintf(__('The %1$s is pointing to %2$s as a %3$s translation. Do you wish to overwrite that link and point it back to this page as a %3$s translation?'), "{{object}}", "{{object_object}}", $subject->language->title);
 			$field->name = "babel_overwrite_$l->name";
-			$field->showIf = "babel_type_$l->name=existing";
-			$field->columnWidth = 50;
+			$field->showIf = "babel_type_$l->name=existing, babel_hidden_$l->name=overwrite";
 			$fieldset->add($field);
 
 			// If Babel should Remove target's language link
 			// that points to this page if user is removing 
 			// the current language link
 			$field = $modules->get('InputfieldCheckbox');
-			$field->label = __('Remove target');
-			$field->description = sprintf(__('In case if the target page has a %1$s link that points to this Page. Should Babel remove it too?'), $subject->language->title);
+			$field->label = __('Remove');
+			$field->description = sprintf(__('The %1$s is pointing back to this page. Would you like to remove that link too?'), "{{target_title}}");
 			$field->name = "babel_remove_$l->name";
-			$field->columnWidth = 50;
-			$field->showIf = "babel_type_$l->name=existing";
+			$field->showIf = "babel_type_$l->name=existing, babel_hidden_$l->name=remove";
 			$fieldset->add($field);
 
 			// Choose parent for new page
@@ -286,6 +397,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->name = "babel_parent_$l->name";
 			$field->label = __('Parent Page');
 			$field->description = __('Choose the parent for the new page');
+			$field->required = true;
+			$field->requiredIf = $field->showIf;
 			$field->showIf = "babel_type_$l->name=new";
 			$field->value = $this->getClosestTranslatedParent($subject, $l);
 			$fieldset->add($field);
@@ -296,6 +409,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->label = __('Page Name');
 			$field->description = __('Choose a name for your new page.');
 			$field->showIf = "babel_type_$l->name=new";
+			$field->required = true;
+			$field->requiredIf = $field->showIf;
 			$fieldset->add($field);
 
 			$wrapper->add($fieldset);
