@@ -19,9 +19,9 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 
 	static public function getDefaultData() {
 		$defaults = array(
-			'translateButton' => false,
-			'translateTab' => false,
-			'translateLinks' => false
+			'translateButton' => true,
+			'translateTab' => true,
+			'translateLinks' => true
 		);
 		return $defaults;
 	}
@@ -36,16 +36,16 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		return array(
 			'title' => 'Babel Translate', 
 			'version' => '002', 
-			'summary' => _('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
-			'href' => 'http://bushluk.com',
+			'summary' => __('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
 			'singular' => true,
-			'autoload' => false,
+			'autoload' => "process=ProcessPageList",
 			'icon' => 'language',
 			'requires' => array('Babel', 'JqueryMagnific'),
 			'installs' => 'Babel',
 			'page' => array(
 				'parent' => 'page',
-				'name' => 'babel-translate'
+				'name' => 'babel-translate',
+				'title' => 'Translations'
 				)
 			);
 	}
@@ -522,18 +522,6 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$url = wire('config')->urls->admin . "page/?open=$b->id";
 			wire('breadcrumbs')->add(new Breadcrumb($url, $b->get('title|name')));
 		}
-	}
-
-	public function install()
-	{
-		parent::___install();
-		$pages = wire('pages');
-		$info = $this->getModuleInfo();
-		$name = $info['page']['name'];
-		$parent = wire('config')->adminRootPageID;
-		$parent = $pages->get("id=$parent");
-		$path = $parent->path . "page/$name/";
-		$pages->get($path)->addStatus(Page::statusHidden)->save();
 	}
 
 	/**

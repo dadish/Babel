@@ -51,8 +51,6 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$this->addHookBefore('Pages::deleteReady', $this, 'cleanTranslations');
 		$this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
 		$this->addHookAfter('Languages::deleted', $this, 'cleanLanguage');
-
-		$this->modules->get('ProcessBabelTranslate');
 	}
 
 	/**
