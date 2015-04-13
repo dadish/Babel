@@ -452,7 +452,10 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$stmt = $this->pdo->exec("CREATE TABLE $table (
 			`subject_id` int(10) unsigned NOT NULL,
 			`language_id` int(10) unsigned NOT NULL,
-			`object_id` int(10) unsigned NOT NULL
+			`object_id` int(10) unsigned NOT NULL,
+			KEY `subject_id` (`subject_id`),
+			KEY `language_id` (`language_id`),
+			KEY `object_id` (`object_id`)
 			) ENGINE=InnoDB DEFAULT CHARSET=utf8");
 
 		$this->message(__("Created table `$table` in database."));
