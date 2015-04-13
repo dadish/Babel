@@ -17,6 +17,11 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	 */
 	protected $i18n = null;
 
+	protected $pageNum = 1;
+	protected $filterType = null;
+	protected $fromLanguage = null;
+	protected $toLanguage = null;
+
 	static public function getDefaultData() {
 		$defaults = array(
 			'translateButton' => true,
@@ -35,10 +40,10 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	public static function getModuleInfo() {
 		return array(
 			'title' => 'Babel Translate', 
-			'version' => '002', 
+			'version' => '003', 
 			'summary' => __('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
 			'singular' => true,
-			'autoload' => "process=ProcessPageList",
+			'autoload' => "process=ProcessPageList|ProcessPageEdit",
 			'icon' => 'language',
 			'requires' => array('Babel', 'JqueryMagnific'),
 			'installs' => 'Babel',
@@ -78,7 +83,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		wire('modules')->get('JqueryMagnific');
 		parent::init();
 		$this->fillUpI18n();
-		$this->addHookAfter('ProcessPageEdit::buildForm', $this, 'hookLanguageTab');
+		if ($this->translateTab) $this->addHookAfter('ProcessPageEdit::buildForm', $this, 'hookLanguageTab');
 		if ($this->translateButton) $this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
 		if ($this->translateLinks) $this->addHookAfter('ProcessPageListRender::getPageLabel', $this, 'hookPageLabel');
 		if ($this->translateTab) $this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
@@ -117,6 +122,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	 */
 	public function execute()
 	{
+		$this->modules->get('MarkupAdminDataTable');
 		switch (wire('input')->get->action) {
 			case 'translate':
 				return $this->executeTranslate();
@@ -127,9 +133,55 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 				break;
 			
 			default:
-				return __("No action defined.");
 				break;
 		}
+
+		$out = '';
+		if ($this->config->ajax) {
+			$this->sanitizeGetVariables();
+			$out = array();
+			$out['body'] = $this->renderProcessBody();
+			$out['pagination'] = $this->renderPagination();
+			return json_encode($out);
+		} else {
+			$out .= $this->renderProcessHeader();
+			$out .= $this->renderProcessFooter();
+		}
+		
+		return $out;
+	}
+
+	/**
+	 *
+	 *
+	 * @throws WireException
+	 */
+	protected function sanitizeGetVariables()
+	{
+		$page = $this->languages->get($this->sanitizer->text($this->input->get->page));
+		if (!ctype_digit($page)) $page = 1;
+		$this->pageNum = $page;
+
+		$from = $this->languages->get($this->sanitizer->text($this->input->get->from));
+		$to = $this->languages->get($this->sanitizer->text($this->input->get->to));
+		$languageErrorStr = __('Wrong language provided `%1$s`.');
+		
+		if (
+			!$from instanceof Language || 
+			!in_array($from->id, $this->babel->include)
+		) {
+			throw new WireException(sprintf($languageErrorStr, $this->input->get->from));
+		}
+
+		if (
+			!$to instanceof Language ||
+			!in_array($to->id, $this->babel->include)
+		) {
+			throw new WireException(sprintf($languageErrorStr, $this->input->get->to));
+		}
+
+		$this->fromLanguage = $from;
+		$this->toLanguage = $to;
 	}
 
 	/**
@@ -138,7 +190,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	 *
 	 *
 	 */
-	public function ___executeTranslate()
+	public function executeTranslate()
 	{
 		$modules = wire('modules');
 		$input = wire('input');
@@ -242,6 +294,152 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	}
 
 	/**
+	 * Prepares the header for module process
+	 * page. This should be used only for regular (non ajax)
+	 * page requests.
+	 * 
+	 * @return string.
+	 */
+	protected function renderProcessHeader()
+	{
+		$languages = new PageArray();
+		$LanguageIds = $this->babel->include;
+		for ($i = 0; $i < count($LanguageIds); $i++) {
+			$language = wire('languages')->get($LanguageIds[$i]);
+			$languages->add($language);
+			if ($i === 0) $fromLanguage = $language;
+			if ($i === 1) $toLanguage = $language;
+		}
+
+		$form = $this->modules->get('InputfieldForm');
+		$form->name = 'ProcessBabelTranslateHeader';
+
+		// Translated or untranslated
+		$field = $this->modules->get('InputfieldSelect');
+		$field->name = 'babel_type';
+		$field->label = __('Pages that are...');
+		$field->addOptions(array(
+			'translated' => __('Translated'),
+			'untranslated' => __('Untranslated')
+			));
+		$field->value = 'untranslated';
+		$field->columnWidth = 33;
+		$form->add($field);
+
+		// from language
+		$field = $this->modules->get('InputfieldSelect');
+		$field->name = 'babel_from';
+		$field->label = __('Translated from...');
+		foreach ($languages as $l) {
+			$field->addOption($l->id, $l->get('title|name'));
+		}
+		$field->value = $fromLanguage->id;
+		$field->columnWidth = 33;
+		$form->add($field);
+
+		// to language
+		$field = $this->modules->get('InputfieldSelect');
+		$field->name = 'babel_to';
+		$field->label = __('Translated to...');
+		foreach ($languages as $l) {
+			$field->addOption($l->id, $l->get('title|name'));
+		}
+		$field->value = $toLanguage->id;
+		$field->columnWidth = 33;
+		$form->add($field);
+
+		return $form->render();
+	}
+
+	/**
+	 * Prepares the body for module process
+	 * page. Should be used for both ajax and
+	 * regular page requests.
+	 * 
+	 * @return string.
+	 */
+	protected function renderProcessBody()
+	{		
+		$pages = $this->babel->getUntranslated($this->fromLanguage, $this->toLanguage, 50, $this->pageNum);
+		$total = $this->babel->getUntranslatedTotal($this->fromLanguage, $this->toLanguage);
+		return $this->renderProcessTable($pages, $total);
+	}
+
+	/**
+	 * Prepares the header for module process
+	 * page. This should be used only for regular (non ajax)
+	 * page requests.
+	 * 
+	 * @return string.
+	 */
+	protected function renderProcessFooter()
+	{
+		$out = "<div class='ProcessBabelTranslateContent'>";
+		$out .= "<div class='ProcessBabelTranslatePagination'></div>";
+		$out .= "<div class='ProcessBabelTranslateBody'></div>";
+		$out .= "<div class='ProcessBabelTranslatePagination'></div>";
+		$out .= "</div>";
+		return $out;
+	}
+
+	/**
+	 * Renders the pages into AdminDataTable
+	 * 
+	 * @param PageArray $pages The pages that will be rendered
+	 * @return string
+	 */
+	protected function renderProcessTable(PageArray $pages, $total)
+	{
+		$table = $this->modules->get('MarkupAdminDataTable');
+		$table->setEncodeEntities(false);
+		$table->setCaption("<p>Total pages $total</p>");
+		$table->headerRow(array(__('Id'), __('Title'), __('Path'), __('Template')));
+		foreach ($pages as $p) {
+			$table->row($this->prepareProcessTableRow($p));
+		}
+		return $table->render();
+	}
+
+	/**
+	 * Prepares an array for MarkupAdminDataTable
+	 * 
+	 * @param Page $page The page that will be prpared
+	 * @return Array
+	 */
+	protected function prepareProcessTableRow(Page $page)
+	{
+		$out = array();
+
+		// add id
+		$out[] = $page->id;
+
+		// Add title
+		$title = $page->get('title|name');
+		$url = $this->pageTranslateUrl($page);
+		$out[] = "<a class='PageListActionBabel' href='$url'>$title</a>";
+
+		// add path
+		$out[] = $page->path;
+
+		// add template
+		$out[] = $page->template->name;
+		return $out;
+	}
+
+	/**
+	 * Render pager
+	 * 
+	 * @param int $current
+	 * @param int $total
+	 * @param 
+	 * 
+	 */
+	protected function renderPagination()
+	{
+		return '';
+	}
+
+	/**
 	 * Hook method that adds a Translation Tab for all pages that are managed by 
 	 * Babel. 
 	 */
@@ -271,17 +469,28 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	{
 		$value = $event->return;
 		$page = $event->arguments(0);
-		$pageName = $this->getModuleInfo()['page']['name'];
 		if (!$this->babel->translatable($page)) return;
 		
 		$value[] = array(
 			'cn' => 'Babel',
 			'name' => $this->i18n['translate'],
-			'url' => "http://" . $this->config->httpHost . $this->config->urls->admin . "page/$pageName/?action=translate&id=$page->id"
+			'url' => $this->pageTranslateUrl($page)
 			);
 
 		$event->return = $value;
 	}
+
+	/**
+	 * Returns a Babel translate url for page
+	 * @param Page $page The page that you want to translate
+	 * @return string
+	 */
+	protected function pageTranslateUrl(Page $page)
+	{
+		$pageName = $this->getModuleInfo()['page']['name'];
+		return "http://" . $this->config->httpHost . $this->config->urls->admin . "page/$pageName/?action=translate&id=$page->id";
+	}
+
 
 	/**
 	 * Hook method. Adds links to the PageListLabel.
@@ -336,7 +545,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field = $modules->get('InputfieldRadios');
 			$field->name = "babel_type_$l->name";
 			$field->label = __('Translate by...');
-			$field->required = true;
+			//$field->required = true;
 			$field->addOptions(array(
 				'existing' => __('Choosing existing page'),
 				'new' => __('Creating new one')
@@ -397,9 +606,9 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->name = "babel_parent_$l->name";
 			$field->label = __('Parent Page');
 			$field->description = __('Choose the parent for the new page');
+			$field->showIf = "babel_type_$l->name=new";
 			$field->required = true;
 			$field->requiredIf = $field->showIf;
-			$field->showIf = "babel_type_$l->name=new";
 			$field->value = $this->getClosestTranslatedParent($subject, $l);
 			$fieldset->add($field);
 
@@ -519,7 +728,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	{
 		wire('breadcrumbs')->removeAll();
 		foreach ($page->parents() as $b) {
-			$url = wire('config')->urls->admin . "page/?open=$b->id";
+			$url = $this->config->urls->admin . "page/?open=$b->id";
 			wire('breadcrumbs')->add(new Breadcrumb($url, $b->get('title|name')));
 		}
 	}

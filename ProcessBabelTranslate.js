@@ -10,9 +10,10 @@ $(document).ready(function () {
 	// Makes page translating much faster	
 	(function () {
 		var $translateButton, url;
-		$(document).on('click', '.PageListActionBabel a', function (e) {
+		$(document).on('click', '.PageListActionBabel', function (e) {
 
 			$translateButton = $(this);
+			if (!$translateButton.is('a')) $translateButton = $translateButton.find('a');
 			if (!!$translateButton.data('magnificPopup')) return;
 
 			e.preventDefault();
@@ -74,5 +75,49 @@ $(document).ready(function () {
 		}
 		
 	})();
+
+	// If we are on a batch translationPage
+	// then init neccessary hooks and bind...
+	if ($('.ProcessBabelTranslateContent').length) {
+		(function () {
+			var form, contentDiv, bodyDiv, paginationDiv, onSelectChange, onAjaxResponse;
+
+			contentDiv = $('.ProcessBabelTranslateContent');
+			form = $('#Inputfield_ProcessBabelTranslateHeader');
+			bodyDiv = $('.ProcessBabelTranslateBody');
+			paginationDiv = $('.ProcessBabelTranslatePagination');
+
+			onSelectChange = function (e) {
+				var type, from, to;
+				type = form.find('[name=babel_type]');
+				from = form.find('[name=babel_from]');
+				to = form.find('[name=babel_to]');
+				contentDiv.css('height', contentDiv.height() + 'px');
+				bodyDiv.fadeOut(200);
+				paginationDiv.fadeOut(200);
+				$.get(settings.ajaxUrl, {
+					type : type.val(),
+					from : from.val(),
+					to : to.val()
+				}, onAjaxResponse);
+			};
+
+			onAjaxResponse = function (data) {
+				data = $.parseJSON(data);
+				bodyDiv.empty().append(data.body);
+				paginationDiv.empty().append(data.pagination);
+				bodyDiv.fadeIn(200, function () {
+					contentDiv.css('height', 'auto');
+				});
+				paginationDiv.fadeIn();
+			};
+
+			form.find('select').on('change', onSelectChange);
+
+			onSelectChange();
+
+
+		})();
+	}
 	
 });
