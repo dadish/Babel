@@ -1,16 +1,54 @@
+.bblbr-l{
+	padding : 1rem;
+}
+
 .bblbr-i{
-	display : inline-block !important;
+	display : inline !important;
 }
 
 .bbl-links-indicator{
 	font-size : 0.4em;
 }
 
-.ProcessBabelTranslate-progress{
+.ProcessBabelTranslateProgress{
 	display: none;
+}
+
+.ProcessBabelTranslateProgress.ProcessPage{
+	display: inline-block;
+	margin-left : 1rem;
+}
+
+.ProcessBabelTranslateProgress.ProcessPage i{
+	font-size: 1.5rem !important;
 }
 
 .ProcessBabelTranslateContent{
 	width : 100%;
-	height : 2000px;
+}
+
+.ProcessBabelTranslateTitle{
+	display : inline-block;
+}
+
+.content .MarkupPagerNav{
+	float : right;
+}
+
+.content .MarkupPagerNav li{
+	padding : 3px;
+}
+
+.ProcessBabelTranslateInfo{
+	width : 100%;
+	min-height : 50px;
+}
+
+.ProcessBabelTranslateInfoTitle{
+	float : left;
+	width : 40%;
+}
+
+.ProcessBabelTranslatePagination{
+	float: right;
 }

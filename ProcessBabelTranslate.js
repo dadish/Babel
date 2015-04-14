@@ -52,7 +52,7 @@ $(document).ready(function () {
 			var id;
 			return function (e, data) {
 				if (!settings.progress[language.name]) {
-					settings.progress[language.name] = $('<li class="ProcessBabelTranslate-progress"><i class="icon fa fa-fw fa-spinner fa-spin"></i></li>');
+					settings.progress[language.name] = $('<li class="ProcessBabelTranslateProgress"><i class="icon fa fa-fw fa-spinner fa-spin"></i></li>');
 					$('#Inputfield_babel_' + language.name + '> .InputfieldContent > .Inputfields').append(settings.progress[language.name]);
 				}
 				settings.progress[language.name].fadeIn();
@@ -77,45 +77,60 @@ $(document).ready(function () {
 	})();
 
 	// If we are on a batch translationPage
-	// then init neccessary hooks and bind...
+	// then init neccessary hooks and binds...
 	if ($('.ProcessBabelTranslateContent').length) {
 		(function () {
-			var form, contentDiv, bodyDiv, paginationDiv, onSelectChange, onAjaxResponse;
+			var form, progressDiv, contentDiv, bodyDiv, infoDiv, onSelectChange, onAjaxResponse, onPageClick;
 
+			progressDiv = $('.ProcessBabelTranslateProgress');
 			contentDiv = $('.ProcessBabelTranslateContent');
 			form = $('#Inputfield_ProcessBabelTranslateHeader');
 			bodyDiv = $('.ProcessBabelTranslateBody');
-			paginationDiv = $('.ProcessBabelTranslatePagination');
+			infoDiv = $('.ProcessBabelTranslateInfo');
 
 			onSelectChange = function (e) {
-				var type, from, to;
-				type = form.find('[name=babel_type]');
-				from = form.find('[name=babel_from]');
-				to = form.find('[name=babel_to]');
-				contentDiv.css('height', contentDiv.height() + 'px');
-				bodyDiv.fadeOut(200);
-				paginationDiv.fadeOut(200);
-				$.get(settings.ajaxUrl, {
-					type : type.val(),
-					from : from.val(),
-					to : to.val()
-				}, onAjaxResponse);
-			};
-
-			onAjaxResponse = function (data) {
-				data = $.parseJSON(data);
-				bodyDiv.empty().append(data.body);
-				paginationDiv.empty().append(data.pagination);
-				bodyDiv.fadeIn(200, function () {
-					contentDiv.css('height', 'auto');
+				var filter, from, to, page, limit;
+				filter = form.find('[name="filter"]').val();
+				from = form.find('[name="from"]').val();
+				to = form.find('[name="to"]').val();
+				limit = form.find('[name="limit"]').val();
+				requestData(settings.ajaxUrl, {
+					filter : filter,
+					from : from,
+					to : to,
+					limit : limit,
+					page : 1
 				});
-				paginationDiv.fadeIn();
 			};
 
-			form.find('select').on('change', onSelectChange);
+			requestData = function (url, data) {
+				contentDiv.animate({opacity : 0}, 200);
+				progressDiv.fadeIn(200);
+				$.get(url, data, function (res) {
+					res = $.parseJSON(res);
+					bodyDiv.empty().append(res.body);
+					infoDiv.empty().append(res.info);
+					contentDiv.animate({opacity : 1}, 200);
+					progressDiv.fadeOut(200);
+				});
+			};
 
-			onSelectChange();
+			onPageClick = function (e) {
+				var target, href;
+				e.preventDefault();
+				target = $(e.target);
+				href = target.attr('href');
+				requestData(href);
+			};
 
+			// bind ajax request on form change
+			form.on('change', 'select', onSelectChange);
+
+			// bind ajax request on pagination click
+			infoDiv.on('click', '.ProcessBabelPageLink', onPageClick);
+
+			// Request initial state
+			requestData(window.location.href);
 
 		})();
 	}

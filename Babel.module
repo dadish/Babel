@@ -163,7 +163,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$stmt->bindValue(':language_id', $toLanguage->id, PDO::PARAM_INT);
 		$stmt->bindValue(':parent_id', $parent->id, PDO::PARAM_INT);
 		$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-		$stmt->bindValue(':start', $limit * $page, PDO::PARAM_INT);
+		$stmt->bindValue(':start', $limit * ($page - 1), PDO::PARAM_INT);
 		$stmt->execute();
 		$ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
 		$total = $this->pdo->prepare("SELECT FOUND_ROWS()");
@@ -196,7 +196,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$stmt->bindValue(':language_id', $toLanguage->id, PDO::PARAM_INT);
 		$stmt->bindValue(':parent_id', $parent->id, PDO::PARAM_INT);
 		$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-		$stmt->bindValue(':start', $limit * $page, PDO::PARAM_INT);
+		$stmt->bindValue(':start', $limit * ($page - 1), PDO::PARAM_INT);
 		$stmt->execute();
 		$ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
 		$total = $this->pdo->prepare("SELECT FOUND_ROWS()");
