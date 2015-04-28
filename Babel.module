@@ -158,7 +158,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 		$stmt = $this->pdo->prepare("SELECT SQL_CALC_FOUND_ROWS id FROM $pagesTable LEFT JOIN $babelTable
 						ON ($pagesTable.id = $babelTable.subject_id AND $babelTable.language_id = :language_id)
-						WHERE $pagesTable.parent_id IN (SELECT pages_id FROM $parentsTable WHERE parents_id = :parent_id)
+						WHERE $pagesTable.parent_id IN (SELECT pages_id FROM $parentsTable WHERE parents_id = :parent_id OR pages_id = :parent_id)
 						AND $babelTable.subject_id IS NULL LIMIT :limit OFFSET :start");
 		$stmt->bindValue(':language_id', $toLanguage->id, PDO::PARAM_INT);
 		$stmt->bindValue(':parent_id', $parent->id, PDO::PARAM_INT);
@@ -178,6 +178,8 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @param Language $fromLanguage The language of the pages
 	 * @param Language $toLanguage The language to which the pages
 	 * 				were translated to.
+	 * @param int $limit. Use to max limit the amount of pages in return PageArray
+	 * @param int $page. Use for pagination of the returned PageArray.
 	 * @return PageArray
 	 * @throws WireException
 	 */
@@ -191,7 +193,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 		$stmt = $this->pdo->prepare("SELECT SQL_CALC_FOUND_ROWS id FROM $pagesTable JOIN $babelTable
 						ON ($pagesTable.id = $babelTable.subject_id AND $babelTable.language_id = :language_id)
-						WHERE $pagesTable.parent_id IN (SELECT pages_id FROM $parentsTable WHERE parents_id = :parent_id)
+						WHERE $pagesTable.parent_id IN (SELECT pages_id FROM $parentsTable WHERE parents_id = :parent_id OR pages_id = :parent_id)
 						LIMIT :limit OFFSET :start");
 		$stmt->bindValue(':language_id', $toLanguage->id, PDO::PARAM_INT);
 		$stmt->bindValue(':parent_id', $parent->id, PDO::PARAM_INT);
