@@ -130,7 +130,7 @@ $(document).ready(function () {
 
 				var targetVal = target.val();
 				var victumVal = victum.val();
-				if (targetVal != victumVal) return;
+				if (targetVal != victumVal || targetVal == '') return;
 
 				var options = victum.find('option');
 				for (var i = 0; i < options.length; i++) {

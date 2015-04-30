@@ -28,7 +28,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 		return array(
 			'title' => 'Babel', 
-			'version' => '004', 
+			'version' => '005', 
 			'summary' => _('Provides functionality for section based multilingual sites on ProcessWire.'),
 			'href' => 'http://bushluk.com',
 			'singular' => true,
