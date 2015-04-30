@@ -178,8 +178,10 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 				'name' => $language->name
 				);
 		}
-
-		$settings['pageId'] = $input->get->id;
+		$id = $input->get->id;
+		$settings['pageId'] = $id;
+		$language = $this->pages->get($id)->language;
+		if ($language) $settings['currentLanguageName'] = $language->name;
 		$this->config->js($this->className, $settings);
 	}
 
@@ -781,6 +783,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->name = "babel_name_$l->name";
 			$field->label = __('Page Name');
 			$field->description = __('Choose a name for your new page.');
+			$field->attr('data-note',  $this->_('The name entered is already in use. If you do not modify it, the name will be made unique automatically after you save.'));
+
 			$field->showIf = "babel_type_$l->name=new";
 			$field->required = true;
 			$field->requiredIf = $field->showIf;
@@ -835,6 +839,19 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 				$remove_object = true;
 				$parent = $input->post("babel_parent_$l->name");
 				$name = $input->post("babel_name_$l->name");
+
+				// check if the parent is valid
+				$parent = $pages->get("id=$parent");
+				if ($parent instanceof NullPage || !$parent->language || $parent->language->id !== $l->id) {
+					$this->error('Parent is not valid!');
+					return;
+				}
+
+				// check if the name is unique
+				// if not make it unique
+				if ($parent->children("name=$name, include=all")->count()) {
+					$name .= "-" . date('d-m-Y--H-i-s');
+				}
 
 				$object = new Page();
 				$object->of(false);

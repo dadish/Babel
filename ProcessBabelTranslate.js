@@ -1,9 +1,51 @@
 $(document).ready(function () {
 
+  // Returns a function, that, as long as it continues to be invoked, will not
+  // be triggered. The function will be called after it stops being called for
+  // N milliseconds. If `immediate` is passed, trigger the function on the
+  // leading edge, instead of the trailing.
+  // Taken from underscore.js. See http://underscorejs.org#debounce
+  function now () {
+    return new Date().getTime();
+  }
+
+  function debounce(func, wait, immediate) {
+    var timeout, args, context, timestamp, result;
+
+    var later = function() {
+      var last = now() - timestamp;
+
+      if (last < wait && last > 0) {
+        timeout = setTimeout(later, wait - last);
+      } else {
+        timeout = null;
+        if (!immediate) {
+          result = func.apply(context, args);
+          if (!timeout) context = args = null;
+        }
+      }
+    };
+
+    return function() {
+      context = this;
+      args = arguments;
+      timestamp = now();
+      var callNow = immediate && !timeout;
+      if (!timeout) timeout = setTimeout(later, wait);
+      if (callNow) {
+        result = func.apply(context, args);
+        context = args = null;
+      }
+
+      return result;
+    };
+  };
+
 	// Make neccessary module preparations
 	var settings;
 	settings = config.ProcessBabelTranslate;
 	settings.ajaxUrl = config.urls.admin + 'page/babel-translate/';
+	settings.ajaxNameExistsUrl = config.urls.admin + 'page/add/exists';
 
 	// Make Babel `translate`	action button dynamic.
 	// Meaning load the action as an iframe via magnific popup.
@@ -35,7 +77,7 @@ $(document).ready(function () {
 	// ProcessBabelTranslate
 	if ($('[data-babel-form="1"]').length) {
 		(function function_name (argument) {
-			var language, target, onObjectChange;
+			var language, target, onObjectChange, onNameChange;
 
 			settings.progress = {};
 
@@ -68,13 +110,54 @@ $(document).ready(function () {
 					});
 				};
 			};
-			
+
 			for (var i = 0; i < settings.languages.length; i++) {
 				language = settings.languages[i];
+				if (language.name === settings.currentLanguageName) continue;
 				target = $('[name="babel_object_'+ language.name +'"]');
 				target.on('pageSelected', onObjectChange(language));
 			}
-			
+
+
+			onNameChange = function (language, status, note) {
+				var target, parent, name;
+				return function (ev) {
+					target = $(ev.target);
+					parent = $('[name="babel_parent_' + language.name + '"]');
+					$.get(settings.ajaxNameExistsUrl, {
+						parent_id : parent.val(),
+						name : target.val()
+					}, function (data) {
+						status.html(' ' + data);
+						if ($(data).hasClass('taken')) {
+							target.addClass('ui-state-error-text');
+							note.show(200);
+						} else {
+							target.removeClass('ui-state-error-text');
+							note.hide(200);
+						}
+					});
+				}
+			}
+
+			var status, note;
+			for (var i = 0; i < settings.languages.length; i++) {
+				language = settings.languages[i];
+				if (language.name === settings.currentLanguageName) continue;
+				target = $('[name="babel_name_'+ language.name +'"]');
+
+				// add a status wrapper right beside the label
+				status = $('<span></span>');
+				$('[for="Inputfield_babel_name_'+ language.name +'"]').append(status);
+
+				// add a dupe note
+				note = $('<p class="notes">' + target.attr('data-note') + '</p>');
+				note.insertAfter(target);
+				note.hide(200)
+				
+				target.on('keyup', debounce(onNameChange(language, status, note), 250));
+			}
+						
 		})();
 	}
 
