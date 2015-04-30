@@ -772,7 +772,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->showIf = "babel_type_$l->name=new";
 			$field->required = true;
 			$field->requiredIf = $field->showIf;
-			$field->value = $this->getClosestTranslatedParent($subject, $l);
+			$translationParent = $this->getClosestTranslatedParent($subject, $l);
+			$field->value = $translationParent;
 			$fieldset->add($field);
 
 			// Choose name for new page
@@ -783,6 +784,11 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->showIf = "babel_type_$l->name=new";
 			$field->required = true;
 			$field->requiredIf = $field->showIf;
+			$name = $subject->name . "-$l->name";
+			if ($translationParent->children("name=$name, include=all")->count()) {
+				$name .= "---" . date('d-m-Y--H-i-s');
+			}
+			$field->value = $name;
 			$fieldset->add($field);
 
 			$wrapper->add($fieldset);
