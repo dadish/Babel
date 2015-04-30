@@ -9,6 +9,8 @@
  * @license MIT
  */
 
+require_once("DatabaseQuerySelectBabel.php");
+
 class Babel extends WireData implements Module, ConfigurableModule {
 
 	const table = 'babel_links';
@@ -148,27 +150,49 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @return PageArray
 	 * @throws WireException 
 	 */
-	public function getUntranslated(Language $fromLanguage, Language $toLanguage, $limit = 50, $page = 1)
+	public function getUntranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
 	{
-		$parent = $this->getRoot($fromLanguage);
-
+		$languages = wire('languages');
 		$pagesTable = 'pages';
 		$parentsTable = 'pages_parents';
 		$babelTable = self::table;
 
-		$stmt = $this->pdo->prepare("SELECT SQL_CALC_FOUND_ROWS id FROM $pagesTable LEFT JOIN $babelTable
-						ON ($pagesTable.id = $babelTable.subject_id AND $babelTable.language_id = :language_id)
-						WHERE $pagesTable.parent_id IN (SELECT pages_id FROM $parentsTable WHERE parents_id = :parent_id OR pages_id = :parent_id)
-						AND $babelTable.subject_id IS NULL LIMIT :limit OFFSET :start");
-		$stmt->bindValue(':language_id', $toLanguage->id, PDO::PARAM_INT);
-		$stmt->bindValue(':parent_id', $parent->id, PDO::PARAM_INT);
-		$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-		$stmt->bindValue(':start', $limit * ($page - 1), PDO::PARAM_INT);
+		// populate languages
+		if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
+		if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);		
+
+		$query = new DatabaseQuerySelectBabel();
+		$query->select('SQL_CALC_FOUND_ROWS');
+		$query->limit($limit);
+		$query->offset($limit * ($page - 1));
+		$query->select('id')->from($pagesTable)->leftjoin($babelTable);
+		$query->on("$pagesTable.id = subject_id");
+
+		// if fromLanguage is given
+		if ($fromLanguage instanceof Language) {
+			$query->where($this->getQueryParents(array($fromLanguage)));
+		} else {
+			$langs = array();
+			foreach ($this->include as $l) {
+				if ($toLanguage instanceof Language && $l == $toLanguage->id) continue;
+				$langs[] = $languages->get($l);
+			}
+			$query->where($this->getQueryParents($langs));
+		}
+
+		// if toLanguage is given
+		if ($toLanguage instanceof Language) {
+			$query->on("$babelTable.language_id = $toLanguage->id");
+		}
+
+		$query->where("$babelTable.subject_id IS NULL");
+
+		$stmt = $this->pdo->prepare($query->getQuery());
 		$stmt->execute();
 		$ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
 		$total = $this->pdo->prepare("SELECT FOUND_ROWS()");
 		$total->execute();
-		$this->totalUntranslated["$fromLanguage->name-$toLanguage->name"] = $total->fetch()[0];
+		$this->totalUntranslated[$this->getTotalKey($fromLanguage, $toLanguage)] = $total->fetch()[0];
 		return $this->pages->getById($ids);
 	}
 
@@ -183,28 +207,76 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @return PageArray
 	 * @throws WireException
 	 */
-	public function getTranslated(Language $fromLanguage, Language $toLanguage, $limit = 50, $page = 1)
+	public function getTranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
 	{
-		$parent = $this->getRoot($fromLanguage);
-
 		$pagesTable = 'pages';
 		$parentsTable = 'pages_parents';
 		$babelTable = self::table;
+		$languages = wire('languages');
+		
+		// populate languages
+		if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
+		if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);
 
-		$stmt = $this->pdo->prepare("SELECT SQL_CALC_FOUND_ROWS id FROM $pagesTable JOIN $babelTable
-						ON ($pagesTable.id = $babelTable.subject_id AND $babelTable.language_id = :language_id)
-						WHERE $pagesTable.parent_id IN (SELECT pages_id FROM $parentsTable WHERE parents_id = :parent_id OR pages_id = :parent_id)
-						LIMIT :limit OFFSET :start");
-		$stmt->bindValue(':language_id', $toLanguage->id, PDO::PARAM_INT);
-		$stmt->bindValue(':parent_id', $parent->id, PDO::PARAM_INT);
-		$stmt->bindValue(':limit', $limit, PDO::PARAM_INT);
-		$stmt->bindValue(':start', $limit * ($page - 1), PDO::PARAM_INT);
+		$query = new DatabaseQuerySelectBabel();
+		$query->select('SQL_CALC_FOUND_ROWS');
+		$query->limit($limit);
+		$query->offset($limit * ($page - 1));
+
+		// if no languages are given
+		// select all pages that have been translated to 
+		if ($fromLanguage === null && $toLanguage === null) {
+			$query->select('subject_id')->from($babelTable);
+
+		// if either one is given
+		} else {
+			$query->select('id')->from($pagesTable)->join($babelTable);
+			$query->on("$pagesTable.id = $babelTable.subject_id");
+
+			// toLanguage is given
+			if ($toLanguage instanceof Language) $query->on("$babelTable.language_id = $toLanguage->id");
+
+			// fromLanguage is given
+			if ($fromLanguage instanceof Language) {
+				$query->where($this->getQueryParents(array($fromLanguage)));
+			} else {
+				$langs = array();
+				foreach ($this->include as $l) {
+					if ($toLanguage instanceof Language && $l == $toLanguage->id) continue;
+					$language = $languages->get($l);
+					$langs[] = $language;
+				}
+				$query->where($this->getQueryParents($langs));
+			}
+		}
+
+		$stmt = $this->pdo->prepare($query->getQuery());
 		$stmt->execute();
 		$ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
 		$total = $this->pdo->prepare("SELECT FOUND_ROWS()");
 		$total->execute();
-		$this->totalTranslated["$fromLanguage->name-$toLanguage->name"] = $total->fetch()[0];
+		$totalKey = $this->getTotalKey($fromLanguage, $toLanguage);
+		$this->totalTranslated[$totalKey] = $total->fetch()[0];
 		return $this->pages->getById($ids);
+	}
+
+	protected function getQueryParents(array $languages)
+	{
+		if (!count($languages)) return '';
+		$pagesTable = 'pages';
+		$parentsTable = 'pages_parents';
+		$language = array_shift($languages);
+		$parent = $this->getRoot($language);
+		$where = "parents_id = $parent->id OR pages_id = $parent->id";
+		foreach ($languages as $language) {
+			$parent = $this->getRoot($language);
+			$where .= " OR parents_id = $parent->id OR pages_id = $parent->id";	
+		}
+		
+		$parents = new DatabaseQuerySelectBabel();
+		$parents->select('pages_id')->from($parentsTable)->where($where);
+		$parents = $parents->getQuery();
+		return "$pagesTable.parent_id IN ($parents)";
 	}
 
 	/**
@@ -214,9 +286,9 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @param Language $toLanguage
 	 * @return int
 	 */
-	public function getUntranslatedTotal(Language $fromLanguage, Language $toLanguage)
+	public function getUntranslatedTotal($fromLanguage = null, $toLanguage = null)
 	{
-		return $this->totalUntranslated["$fromLanguage->name-$toLanguage->name"];
+		return $this->totalUntranslated[$this->getTotalKey($fromLanguage, $toLanguage)];
 	}
 
 
@@ -227,9 +299,30 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @param Language $toLanguage
 	 * @return int
 	 */
-	public function getTranslatedTotal(Language $fromLanguage, Language $toLanguage)
+	public function getTranslatedTotal($fromLanguage = null, $toLanguage = null)
 	{
-		return $this->totalTranslated["$fromLanguage->name-$toLanguage->name"];
+		return $this->totalTranslated[$this->getTotalKey($fromLanguage, $toLanguage)];
+	}
+
+	/**
+	 *
+	 *
+	 *
+	 */
+	protected function getTotalKey($fromLanguage = null, $toLanguage = null)
+	{
+		$key = "";
+		if ($fromLanguage instanceof Language) {
+			$key .= $fromLanguage->name;
+		}
+
+		if ($toLanguage instanceof Language) {
+			$key .= "->" . $toLanguage->name;
+		} else {
+			$key .= "->";
+		}
+
+		return $key;
 	}
 
 	/**

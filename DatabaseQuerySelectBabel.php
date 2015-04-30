@@ -41,7 +41,8 @@ class DatabaseQuerySelectBabel extends DatabaseQuerySelect {
 			$this->getQueryWhere() . 
 			$this->getQueryGroupby() . 
 			$this->getQueryOrderby() . 
-			$this->getQueryLimit(); 
+			$this->getQueryLimit() . 
+			$this->getQueryOffset(); 
 
 		if($this->get('comment') && $this->wire('config')->debug) {
 			// NOTE: PDO thinks ? and :str param identifiers in /* comments */ are real params

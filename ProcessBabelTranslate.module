@@ -206,9 +206,6 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 				$out = '';
 				if ($this->config->ajax) {
 					$out = array('body' => '', 'info' => '');
-					if ($this->fromLanguage->id === $this->toLanguage->id) {
-						return json_encode($out);
-					}
 					$out['body'] = $this->renderProcessBody();
 					$out['info'] = $this->renderInfo();
 					return json_encode($out);
@@ -595,7 +592,12 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 					break;
 			}
 			$classes = implode(' ', $classes);
-			$pagination .= "<li class='$classes'><a class='ProcessBabelPageLink' href='$pageUrl'>$pageLabel</a></li>";
+			if ($item->type === PagerNavItem::typeSeparator) {
+				$pagination .= "<li class='$classes'><span class='detail'>$pageLabel</span></li>";	
+			} else {
+				$pagination .= "<li class='$classes'><a class='ProcessBabelPageLink' href='$pageUrl'>$pageLabel</a></li>";	
+			}
+			
 		}
 		$pagination .= "</ul>";
 		return $title . $pagination;
