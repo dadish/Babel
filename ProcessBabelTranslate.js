@@ -33,48 +33,51 @@ $(document).ready(function () {
 	// Listen to the change in babel_object_$language
 	// inputfields and ask what to do via ajax from 
 	// ProcessBabelTranslate
-	(function function_name (argument) {
-		var language, target, onObjectChange;
+	if ($('[data-babel-form="1"]').length) {
+		(function function_name (argument) {
+			var language, target, onObjectChange;
 
-		settings.progress = {};
+			settings.progress = {};
 
-		function replaceDescription (id, data) {
-			var target, text, key;
-			target = $('#' + id + ' > .InputfieldContent > .description');
-			text = target.text();
-			for (key in data) {
-				text = text.replace('{{'+ key +'}}', '"' + data[key] + '"');
-			}
-			target.text(text);
-		}
-
-		onObjectChange = function (language) {
-			var id;
-			return function (e, data) {
-				if (!settings.progress[language.name]) {
-					settings.progress[language.name] = $('<li class="ProcessBabelTranslateProgress"><i class="icon fa fa-fw fa-spinner fa-spin"></i></li>');
-					$('#Inputfield_babel_' + language.name + '> .InputfieldContent > .Inputfields').append(settings.progress[language.name]);
+			function replaceDescription (id, data) {
+				var target, text, key;
+				target = $('#' + id + ' > .InputfieldContent > .description');
+				text = target.text();
+				for (key in data) {
+					text = text.replace('{{'+ key +'}}', '"' + data[key] + '"');
 				}
-				settings.progress[language.name].fadeIn();
-				$.get(settings.ajaxUrl + "?action=fieldObject&id="+ settings.pageId +"&object=" + data.id + "&language=" + language.id, function (data) {
-					settings.progress[language.name].fadeOut(0);
-					data = $.parseJSON(data);
-					if (data.follow === 'dependency') {
-						id = data.inputfieldId + '_' + language.name;
-						replaceDescription(id, data.replace);
-						$('#Inputfield_babel_hidden_' + language.name).val(data.hiddenValue).trigger('change');
+				target.text(text);
+			}
+
+			onObjectChange = function (language) {
+				var id;
+				return function (e, data) {
+					if (!settings.progress[language.name]) {
+						settings.progress[language.name] = $('<li class="ProcessBabelTranslateProgress"><i class="icon fa fa-fw fa-spinner fa-spin"></i></li>');
+						$('#Inputfield_babel_' + language.name + '> .InputfieldContent > .Inputfields').append(settings.progress[language.name]);
 					}
-				});
+					settings.progress[language.name].fadeIn();
+					$.get(settings.ajaxUrl + "?action=fieldObject&id="+ settings.pageId +"&object=" + data.id + "&language=" + language.id, function (data) {
+						settings.progress[language.name].fadeOut(0);
+						data = $.parseJSON(data);
+						if (data.follow === 'dependency') {
+							id = data.inputfieldId + '_' + language.name;
+							replaceDescription(id, data.replace);
+							$('#Inputfield_babel_hidden_' + language.name).val(data.hiddenValue).trigger('change');
+						}
+					});
+				};
 			};
-		};
-		
-		for (var i = 0; i < settings.languages.length; i++) {
-			language = settings.languages[i];
-			target = $('[name="babel_object_'+ language.name +'"]');
-			target.on('pageSelected', onObjectChange(language));
-		}
-		
-	})();
+			
+			for (var i = 0; i < settings.languages.length; i++) {
+				language = settings.languages[i];
+				target = $('[name="babel_object_'+ language.name +'"]');
+				target.on('pageSelected', onObjectChange(language));
+			}
+			
+		})();
+	}
+
 
 	// If we are on a batch translationPage
 	// then init neccessary hooks and binds...
