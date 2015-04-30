@@ -80,7 +80,7 @@ $(document).ready(function () {
 	// then init neccessary hooks and binds...
 	if ($('.ProcessBabelTranslateContent').length) {
 		(function () {
-			var form, progressDiv, contentDiv, bodyDiv, infoDiv, onSelectChange, onAjaxResponse, onPageClick;
+			var form, progressDiv, contentDiv, bodyDiv, infoDiv, onSelectChange, onAjaxResponse, onPageClick, changeOther;
 
 			progressDiv = $('.ProcessBabelTranslateProgress');
 			contentDiv = $('.ProcessBabelTranslateContent');
@@ -122,6 +122,28 @@ $(document).ready(function () {
 				href = target.attr('href');
 				requestData(href);
 			};
+
+			changeOther = function (e) {
+				var target, victum;
+				target = $(e.target);
+				victum = (target.is('#Inputfield_from')) ? $('#Inputfield_to') : $('#Inputfield_from');
+
+				var targetVal = target.val();
+				var victumVal = victum.val();
+				if (targetVal != victumVal) return;
+
+				var options = victum.find('option');
+				for (var i = 0; i < options.length; i++) {
+					victumVal = $(options[i]).attr('value');
+					if (targetVal != victumVal && victumVal != '') {
+						victum.val(victumVal);
+						break;
+					}
+				}
+			}
+
+			// bind handler on languge change
+			form.on('change', '#Inputfield_from, #Inputfield_to', changeOther);
 
 			// bind ajax request on form change
 			form.on('change', 'select', onSelectChange);
