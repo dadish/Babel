@@ -883,8 +883,62 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			} else {
 				$object = $pages->get("id=$object");
 				$i18n_str = $page->addTranslation($object, $overwrite_object) ? 'success' : 'failure';
-				$i18n_str = ($type === 'new') ? "create_$i18n_str" : "add_$i18n_str";
+				if ($type === 'new') {
+					$i18n_str = "create_$i18n_str";
+					$this->copyPage($page, $object);
+					$object->save();
+				} else {
+					$i18n_str = "add_$i18n_str";
+				}
 				$this->message(sprintf($this->i18n[$i18n_str], $page->title, $object->language->title, $object->title));
+			}
+		}
+	}
+
+	/**
+	 * Copies all fields from first page into second.
+	 * 
+	 * @param Page $from The page from which the fields will 
+	 *        be populated
+	 * @param Page $to The page into which the fields will
+	 * 				be populated
+	 * @return undefined;
+	 * @throws WireException
+	 */ 
+	protected function copyPage(Page $from, Page $to)
+	{
+		if ($from->template->id !== $to->template->id) throw new WireException("Provided pages for copy should have the same template.");
+
+		$verboseTypes = array(
+			'FieldtypeFile',
+			'FieldtypeImage',
+			'FieldtypeRepeater',
+			'FieldtypeComments',
+			'FieldtypeCache',
+			'FieldtypeFieldsetClose',
+			'FieldtypeFieldsetOpen',
+			'FieldtypeFieldsetTabOpen',
+			'FieldtypePageTable'
+			);
+
+		$toLanguage = $to->language;
+
+		foreach ($from->fields as $field) {
+			if (in_array($field->type, $verboseTypes)) continue;
+			$name = $field->name;
+			if ($field->type == 'FieldtypePage') {
+				if ($field->derefAsPage == FieldtypePage::derefAsPageArray) {
+					foreach ($from->$name as $page) {
+						$translation = $page->translation($toLanguage);
+						if ($translation && $translation instanceof Page) $to->$name->add($translation);
+					}
+				} else if ($from->$name instanceof Page){
+					$translation = $from->$name->translation($toLanguage);
+					if ($translation && $translation instanceof Page);
+					$to->$name = $translation;
+				}
+			} else {
+				$to->$name = $from->$name;	
 			}
 		}
 	}
