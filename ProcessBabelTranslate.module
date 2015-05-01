@@ -98,7 +98,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	public static function getModuleInfo() {
 		return array(
 			'title' => __('Babel Translate'), 
-			'version' => '006', 
+			'version' => '007', 
 			'summary' => __('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
 			'singular' => true,
 			'autoload' => "process=ProcessPageList|ProcessPageEdit",
