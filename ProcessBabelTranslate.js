@@ -1,10 +1,64 @@
 $(document).ready(function () {
 
-  // Returns a function, that, as long as it continues to be invoked, will not
-  // be triggered. The function will be called after it stops being called for
-  // N milliseconds. If `immediate` is passed, trigger the function on the
-  // leading edge, instead of the trailing.
-  // Taken from underscore.js. See http://underscorejs.org#debounce
+//===============================================================================================================
+// UNDERSCORE HELPER FUNCTIONS
+//===============================================================================================================
+  // Taken from underscore.js. See http://underscorejs.org/docs/underscore.html
+
+  // Save bytes in the minified (but not gzipped) version:
+  var ArrayProto = Array.prototype, ObjProto = Object.prototype, FuncProto = Function.prototype;
+
+  // Create quick reference variables for speed access to core prototypes.
+  var
+    push             = ArrayProto.push,
+    slice            = ArrayProto.slice,
+    concat           = ArrayProto.concat,
+    toString         = ObjProto.toString,
+    hasOwnProperty   = ObjProto.hasOwnProperty;
+
+  // All **ECMAScript 5** native function implementations that we hope to use
+  // are declared here.
+  var
+    nativeIsArray      = Array.isArray,
+    nativeKeys         = Object.keys,
+    nativeBind         = FuncProto.bind;
+
+  // Add some isType methods: isArguments, isFunction, isString, isNumber, isDate, isRegExp.
+  var helperFunctions = ['Arguments', 'Function', 'String', 'Number', 'Date', 'RegExp'];
+  for (var i = 0; i < helperFunctions.length; i++) {
+  	var name = helperFunctions[i];
+    window['is' + name] = function(obj) {
+      return toString.call(obj) === '[object ' + name + ']';
+    };
+  }
+
+  // Optimize `isFunction` if appropriate. Work around an IE 11 bug.
+  if (typeof /./ !== 'function') {
+    window.isFunction = function(obj) {
+      return typeof obj == 'function' || false;
+    };
+  }
+
+  // Create a function bound to a given object (assigning `this`, and arguments,
+  // optionally). Delegates to **ECMAScript 5**'s native `Function.bind` if
+  // available.
+  function bind(func, context) {
+    var args, bound;
+    if (nativeBind && func.bind === nativeBind) return nativeBind.apply(func, slice.call(arguments, 1));
+    if (!isFunction(func)) throw new TypeError('Bind must be called on a function');
+    args = slice.call(arguments, 2);
+    bound = function() {
+      if (!(this instanceof bound)) return func.apply(context, args.concat(slice.call(arguments)));
+      Ctor.prototype = func.prototype;
+      var self = new Ctor;
+      Ctor.prototype = null;
+      var result = func.apply(self, args.concat(slice.call(arguments)));
+      if (isObject(result)) return result;
+      return self;
+    };
+    return bound;
+  };
+
   function now () {
     return new Date().getTime();
   }
@@ -41,41 +95,23 @@ $(document).ready(function () {
     };
   };
 
+//===============================================================================================================
+// END UNDERSCORE HELPER FUNCTIONS
+//===============================================================================================================
+
+
 	// Make neccessary module preparations
 	var settings;
 	settings = config.ProcessBabelTranslate;
 	settings.ajaxUrl = config.urls.admin + 'page/babel-translate/';
 	settings.ajaxNameExistsUrl = config.urls.admin + 'page/add/exists';
-
-	// Make Babel `translate`	action button dynamic.
-	// Meaning load the action as an iframe via magnific popup.
-	// Makes page translating much faster	
-	(function () {
-		var $translateButton, url;
-		$(document).on('click', '.PageListActionBabel', function (e) {
-
-			$translateButton = $(this);
-			if (!$translateButton.is('a')) $translateButton = $translateButton.find('a');
-			if (!!$translateButton.data('magnificPopup')) return;
-
-			e.preventDefault();
-			url = $translateButton.attr('href');	
-			$translateButton.attr('href', url + '&modal=1');
-
-			$translateButton.magnificPopup({
-				type : 'iframe'
-			});
-
-			$translateButton.trigger('click');
-		});			
-	})();
-
-
+	settings.batchForm = !!$('[data-babel-batch-form="1"]').length;
+	settings.translateForm = !!$('[data-babel-translate-form="1"]').length;
 
 	// Listen to the change in babel_object_$language
 	// inputfields and ask what to do via ajax from 
 	// ProcessBabelTranslate
-	if ($('[data-babel-form="1"]').length) {
+	if (settings.translateForm) {
 		(function function_name (argument) {
 			var language, target, onObjectChange, onNameChange;
 
@@ -164,83 +200,120 @@ $(document).ready(function () {
 
 	// If we are on a batch translationPage
 	// then init neccessary hooks and binds...
-	if ($('.ProcessBabelTranslateContent').length) {
-		(function () {
-			var form, progressDiv, contentDiv, bodyDiv, infoDiv, onSelectChange, onAjaxResponse, onPageClick, changeOther;
 
-			progressDiv = $('.ProcessBabelTranslateProgress');
-			contentDiv = $('.ProcessBabelTranslateContent');
-			form = $('#Inputfield_ProcessBabelTranslateHeader');
-			bodyDiv = $('.ProcessBabelTranslateBody');
-			infoDiv = $('.ProcessBabelTranslateInfo');
+	var BabelBatcher = {
+		
+		progressDiv : $('.ProcessBabelTranslateProgress'),
 
-			onSelectChange = function (e) {
-				var filter, from, to, page, limit;
-				filter = form.find('[name="filter"]').val();
-				from = form.find('[name="from"]').val();
-				to = form.find('[name="to"]').val();
-				limit = form.find('[name="limit"]').val();
-				requestData(settings.ajaxUrl, {
-					filter : filter,
-					from : from,
-					to : to,
-					limit : limit,
-					page : 1
-				});
-			};
+		contentDiv : $('.ProcessBabelTranslateContent'),
 
-			requestData = function (url, data) {
-				contentDiv.animate({opacity : 0}, 200);
-				progressDiv.fadeIn(200);
-				$.get(url, data, function (res) {
-					res = $.parseJSON(res);
-					bodyDiv.empty().append(res.body);
-					infoDiv.empty().append(res.info);
-					contentDiv.animate({opacity : 1}, 200);
-					progressDiv.fadeOut(200);
-				});
-			};
+		filterForm : $('#Inputfield_ProcessBabelTranslateHeader'),
 
-			onPageClick = function (e) {
-				var target, href;
-				e.preventDefault();
-				target = $(e.target);
-				href = target.attr('href');
-				requestData(href);
-			};
+		bodyDiv : $('.ProcessBabelTranslateBody'),
 
-			changeOther = function (e) {
-				var target, victum;
-				target = $(e.target);
-				victum = (target.is('#Inputfield_from')) ? $('#Inputfield_to') : $('#Inputfield_from');
+		infoDiv : $('.ProcessBabelTranslateInfo'),
 
-				var targetVal = target.val();
-				var victumVal = victum.val();
-				if (targetVal != victumVal || targetVal == '') return;
+		onSelectChange : function (e) {
+			var filter, to, page, limit;
+			filter = this.filterForm.find('[name="filter"]').val();
+			from = this.filterForm.find('[name="from"]').val();
+			to = this.filterForm.find('[name="to"]').val();
+			limit = this.filterForm.find('[name="limit"]').val();
+			this.requestData(settings.ajaxUrl, {
+				filter : filter,
+				from : from,
+				to : to,
+				limit : limit,
+				page : 1
+			});
+		},
 
-				var options = victum.find('option');
-				for (var i = 0; i < options.length; i++) {
-					victumVal = $(options[i]).attr('value');
-					if (targetVal != victumVal && victumVal != '') {
-						victum.val(victumVal);
-						break;
-					}
-				}
+		requestData : function (url, data) {
+			this.contentDiv.animate({opacity : 0}, 200);
+			this.progressDiv.fadeIn(200);
+
+			function then (res) {
+				res = $.parseJSON(res);
+				this.bodyDiv.empty().append(res.body);
+				this.infoDiv.empty().append(res.info);
+				this.contentDiv.animate({opacity : 1}, 200);
+				this.progressDiv.fadeOut(200);
 			}
 
+			$.get(url, data, bind(then, this));
+		},
+
+		onPageClick : function (e) {
+			var target, href;
+			e.preventDefault();
+			target = $(e.target);
+			href = target.attr('href');
+			this.requestData(href);
+		},
+
+		changeOther : function (e) {
+			var target, victum;
+			target = $(e.target);
+			victum = (target.is('#Inputfield_from')) ? $('#Inputfield_to') : $('#Inputfield_from');
+
+			var targetVal = target.val();
+			var victumVal = victum.val();
+			if (targetVal != victumVal || targetVal == '') return;
+
+			var options = victum.find('option');
+			for (var i = 0; i < options.length; i++) {
+				victumVal = $(options[i]).attr('value');
+				if (targetVal != victumVal && victumVal != '') {
+					victum.val(victumVal);
+					break;
+				}
+			}
+		},
+
+		init : function () {
 			// bind handler on languge change
-			form.on('change', '#Inputfield_from, #Inputfield_to', changeOther);
+			this.filterForm.on('change', '#Inputfield_from, #Inputfield_to', bind(this.changeOther, this));
 
 			// bind ajax request on form change
-			form.on('change', 'select', onSelectChange);
+			this.filterForm.on('change', 'select', bind(this.onSelectChange, this));
 
 			// bind ajax request on pagination click
-			infoDiv.on('click', '.ProcessBabelPageLink', onPageClick);
+			this.infoDiv.on('click', '.ProcessBabelPageLink', bind(this.onPageClick, this));
 
 			// Request initial state
-			requestData(window.location.href);
+			this.requestData(window.location.href);
+		}
 
-		})();
+	};
+	
+	if (settings.batchForm) {			
+		BabelBatcher.init();
 	}
+
+	// Make Babel `translate`	action button dynamic.
+	// Meaning load the action as an iframe via magnific popup.
+	// Makes page translating much faster			
+	$(document).on('click', '.PageListActionBabel', function (e) {
+		var $translateButton, url;
+		$translateButton = $(this);
+		if (!$translateButton.is('a')) $translateButton = $translateButton.find('a');
+		if (!!$translateButton.data('magnificPopup')) return;
+
+		e.preventDefault();
+		url = $translateButton.attr('href');	
+		$translateButton.attr('href', url + '&modal=1');
+
+		$translateButton.magnificPopup({
+			type : 'iframe',
+			callbacks : {
+				close : function () {
+					if (!settings.batchForm) return;
+					BabelBatcher.onSelectChange();
+				}
+			}
+		});
+
+		$translateButton.trigger('click');
+	});
 	
 });

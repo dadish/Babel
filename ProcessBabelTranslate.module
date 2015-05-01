@@ -404,6 +404,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 
 		$form = $this->modules->get('InputfieldForm');
 		$form->name = 'ProcessBabelTranslateHeader';
+		$form->attr('data-babel-batch-form', '1');
 
 		// Translated or untranslated
 		$field = $this->modules->get('InputfieldSelect');
@@ -516,7 +517,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$out[] = $page->id;
 
 		// add language
-		$out[] = $page->language->get('title|name');
+		$language = $page->language;
+		$out[] = ($language && $language instanceof Language) ? $language->get('title|name') : 'not available';
 
 		// Add title
 		$title = $page->get('title|name');
@@ -693,7 +695,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$wrapper->attr('id', $id);
 		$title = $this->_('Translate'); // Tab Label: Translate
 		$wrapper->attr('title', $title); 
-		$wrapper->attr('data-babel-form', '1');
+		$wrapper->attr('data-babel-translate-form', '1');
 
 		foreach ($this->babel->include as $l) {
 			$l = $languages->get($l);
