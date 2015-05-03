@@ -28,7 +28,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 		return array(
 			'title' => 'Babel', 
-			'version' => '008', 
+			'version' => '009', 
 			'summary' => _('Provides functionality for section based multilingual sites on ProcessWire.'),
 			'href' => 'http://bushluk.com',
 			'singular' => true,
@@ -55,6 +55,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$this->addHook('Page::removeTranslation', $this, 'pageRemoveTranslation');
 		$this->addHookBefore('Pages::deleteReady', $this, 'cleanTranslations');
 		$this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
+		$this->addHookBefore('Pages::saveReady', $this, 'fixConflicts');
 		$this->addHookAfter('Languages::deleted', $this, 'cleanLanguage');
 	}
 
@@ -543,6 +544,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	 * @param boolean $remove If the translation
 	 * 				is pointing back to this page should Babel
 	 * 				remove that link too.
+	 * @throws WireException
 	 * @return boolean. If the removal is successful or not.
 	 */
 	protected function pageRemoveTranslation(HookEvent $event)
@@ -556,14 +558,15 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		if (!$language instanceof Language) throw new WireException("Unknown Language `$language`.");
 
 		$object = $this->getObject($subject, $language);
-		if ($object instanceof NullPage) throw new WireException("Page $subject->title hasn't got a translation for $language->title language.");
+	
+		if ($object instanceof NullPage) {
+			$success = false;
+		} else {
+			// Remove the link
+			$success = $this->removeLink($subject, $object);
 
-		// Remove the link
-		$success = $this->removeLink($subject, $object);
-
-		// Remove reverse link if asked and if there is one
-		if ($remove && $this->getObject($object, $subject->language)->id === $subject->id) {
-			$success = $this->removeLink($object, $subject);
+			// Remove reverse link if asked and if there is one
+			if ($remove) $success = $this->removeLink($object, $subject);
 		}
 
 		$event->return = $success;
@@ -626,6 +629,29 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$stmt = $this->pdo->prepare("DELETE FROM $table WHERE language_id=:language_id");
 		$stmt->execute(array('language_id' => $language->id));
 		$this->message(sprintf(__('Deleted %1$s translation links for %2$s language'), $stmt->rowCount(), $language->title));
+	}
+
+	/**
+	 * Fixes conflicts if there are any. Primirily used on page move
+	 * When new position of the page in the pages tree brings conflicts
+	 * to it's language links
+	 * 
+	 */
+	protected function fixConflicts(HookEvent $event)
+	{
+		$page = $event->arguments(0);
+		$parent = $page->parent();
+		
+		// First of all the parent page should be translatable by
+		// Babel.
+		if (!$this->translatable($parent)) return $this->cleanTranslations($event);
+
+		$parentLanguage = $parent->language;
+
+		// if the page has a translation link with the language
+		// of it's new parent then it should be removed.
+		$translation = $page->translation($parentLanguage);
+		$page->removeTranslation($parentLanguage, true);
 	}
 
 	/**
