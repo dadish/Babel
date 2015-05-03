@@ -437,11 +437,9 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 	/**
 	 * Removes a link from $subject to $object
-	 * Throws error if the is no link between $subject and $object
 	 * 
 	 * @param $subject Page object. The Page from which the link points.
 	 * @param $object Page object. The Page to which the link points.
-	 * @throws WireException
 	 * @return boolean True if link succesfully removed. False otherwise.
 	 */
 	protected function removeLink(Page $subject, Page $object)
@@ -589,6 +587,16 @@ class Babel extends WireData implements Module, ConfigurableModule {
 				$this->message(sprintf(__('Removed translation link between %1$s and %2$s'), $page->title, $subject->title));
 			}
 		}
+
+		foreach($this->getObjects($page) as $object) {
+			if (!$this->removeLink($page, $object)) {
+				$success = false;
+				$this->message(sprintf(__('Couldn\'t remove translation link between %1$s and %2$s'), $page->title, $object->title));
+			} else {
+				$this->message(sprintf(__('Removed translation link between %1$s and %2$s'), $page->title, $object->title));
+			}
+		}
+
 		return $success;
 	}
 

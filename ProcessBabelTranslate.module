@@ -790,7 +790,10 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->showIf = "babel_type_$l->name=new";
 			$field->required = true;
 			$field->requiredIf = $field->showIf;
-			$name = $subject->name . "-$l->name";
+			$name = $subject->name;
+			if ($translationParent->children("name=$name, include=all")->count()) {
+				$name  . "-$l->name";
+			}
 			if ($translationParent->children("name=$name, include=all")->count()) {
 				$name .= "---" . date('d-m-Y--H-i-s');
 			}
@@ -861,13 +864,14 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 				$object->parent = $parent;
 				$object->name = $name;
 				$object->title = $name;
+				$this->copyPage($page, $object);
 				$object->save();
 				$object = $object->id;
 			}
 
 			// If the value is empty or cannot be finded
 			// remove translation $l for $page
-			if (!$object || $pages->get("id=$object") instanceof NullPage) {
+			if (!$object || $pages->get($object) instanceof NullPage) {
 				
 				// Check if we actually have that link in babel_links table
 				$object = $page->translation($l);
@@ -887,8 +891,6 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 				$i18n_str = $page->addTranslation($object, $overwrite_object) ? 'success' : 'failure';
 				if ($type === 'new') {
 					$i18n_str = "create_$i18n_str";
-					$this->copyPage($page, $object);
-					$object->save();
 				} else {
 					$i18n_str = "add_$i18n_str";
 				}
