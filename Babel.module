@@ -513,7 +513,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	{
 		$subject = $event->object;
 		$target = $event->arguments(0);
-		$overwrite = (boolean) $event->arguments(1);
+		$overwrite = $event->arguments(1);
 		$success = false;
 
 		// $target is not a Page and cannot get us a Page
@@ -522,10 +522,10 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		else $object = wire('pages')->get($target);
 		if (!$object instanceof Page) throw new WireException("Unknown Page `$target`.");
 
-		// Assuming $overwrite is false or not given
+		// Assuming $overwrite is not given
 		// If the target has no translation link for 
 		// $page's language then add it automatically
-		if (!$overwrite) $overwrite = $this->getObject($object, $subject->language) instanceof NullPage;
+		if (is_null($overwrite)) $overwrite = $this->getObject($object, $subject->language) instanceof NullPage;
 
 		// Add a link
 		$success = $this->addLink($subject, $object);
