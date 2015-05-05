@@ -293,7 +293,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		$form = $modules->get('InputfieldForm');
 		$form->attr('method', 'POST');
 		$form->attr('action', $this->pageTranslateUrl($page));
-		$form->add($this->buildLanguageTab($page));
+		$form->add($this->buildTranslateTab($page));
 
 		$field = $modules->get('InputfieldSubmit');
 		$field->attr('id+name', 'submit_babel_translate');
@@ -623,7 +623,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 
 		$form = $event->arguments[0];
 		$processPageEdit = $event->object;
-		$translationTab = $this->buildLanguageTab($page);
+		$translationTab = $this->buildTranslateTab($page);
 		$processPageEdit->addTab($translationTab->attr('id'), $translationTab->attr('title'));
 		$form->insertBefore($translationTab, $form->get('submit_save'));
 		$event->return = $form;
@@ -686,7 +686,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 	 *
 	 * @param $subject Page object. The Page for which the TranslationTab for.
 	 */
-	protected function buildLanguageTab(Page $subject)
+	protected function buildTranslateTab(Page $subject)
 	{
 		$modules = wire('modules');
 		$languages = wire('languages');
