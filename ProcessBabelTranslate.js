@@ -112,8 +112,8 @@ $(document).ready(function () {
 	// inputfields and ask what to do via ajax from 
 	// ProcessBabelTranslate
 	if (settings.translateForm) {
-		(function function_name (argument) {
-			var language, target, onObjectChange, onNameChange;
+		(function () {
+			var language, babelObject, babelObjectSelect, babaelName, status, note;
 
 			settings.progress = {};
 
@@ -127,7 +127,7 @@ $(document).ready(function () {
 				target.text(text);
 			}
 
-			onObjectChange = function (language) {
+			function onObjectChange (language) {
 				var id;
 				return function (e, data) {
 					if (!settings.progress[language.name]) {
@@ -147,15 +147,7 @@ $(document).ready(function () {
 				};
 			};
 
-			for (var i = 0; i < settings.languages.length; i++) {
-				language = settings.languages[i];
-				if (language.name === settings.currentLanguageName) continue;
-				target = $('[name="babel_object_'+ language.name +'"]');
-				target.on('pageSelected', onObjectChange(language));
-			}
-
-
-			onNameChange = function (language, status, note) {
+			function onNameChange (language, status, note) {
 				var target, parent, name;
 				return function (ev) {
 					target = $(ev.target);
@@ -176,24 +168,57 @@ $(document).ready(function () {
 				}
 			}
 
-			var status, note;
+			function unlinkObject (target, language) {
+				var $input, $listRoot;
+				return function (ev) {
+					$input = target.children('input#Inputfield_babel_object_' + language.name);
+					$listRoot = target.children('.PageListRoot');
+
+					$listRoot.find('*').off();
+					$listRoot.remove();
+					$input.val('');
+					$input.ProcessPageList(config.ProcessBabelTranslate.translateSelectSettings);
+				}
+			}
+
 			for (var i = 0; i < settings.languages.length; i++) {
 				language = settings.languages[i];
 				if (language.name === settings.currentLanguageName) continue;
-				target = $('[name="babel_name_'+ language.name +'"]');
 
+				// listen to page change on babel_object
+				babelObject = $('[name="babel_object_'+ language.name +'"]');
+				babelObject.on('pageSelected', onObjectChange(language));
+
+				// listen to name change and notify about the dupes
+				babelName = $('[name="babel_name_'+ language.name +'"]');
+				
 				// add a status wrapper right beside the label
 				status = $('<span></span>');
 				$('[for="Inputfield_babel_name_'+ language.name +'"]').append(status);
-
+				
 				// add a dupe note
-				note = $('<p class="notes">' + target.attr('data-note') + '</p>');
-				note.insertAfter(target);
+				note = $('<p class="notes">' + babelName.attr('data-note') + '</p>');
+				note.insertAfter(babelName);
 				note.hide(200)
 				
-				target.on('keyup', debounce(onNameChange(language, status, note), 250));
-			}
-						
+				babelName.on('keyup', debounce(onNameChange(language, status, note), 250));
+
+				// bind event on babelActionEdit
+				$('#Inputfield_babel_'+ language.name +' .PageListActionsBabel').on('click', 'li.PageListActionEdit a', function (ev) {
+					ev.preventDefault();
+					parent.$('body').trigger('babel:action:edit', $(ev.target).attr('href'));
+				});
+
+				// bind event on babelActionView
+				$('#Inputfield_babel_'+ language.name + ' .PageListActionsBabel').on('click', 'li.PageListActionView a', function (ev) {
+					ev.preventDefault();
+					parent.$('body').trigger('babel:action:view', $(ev.target).attr('href'));
+				});
+
+				// bind event on babelActionUnlink
+				babelObjectSelect = $('#Inputfield_babel_'+ language.name + ' #wrap_Inputfield_babel_object_' + language.name + ' .InputfieldContent');
+				$('#Inputfield_babel_'+ language.name + ' .PageListActionsBabel').on('click', 'li.PageListActionUnlink a', unlinkObject(babelObjectSelect, language));				
+			}						
 		})();
 	}
 
@@ -293,8 +318,9 @@ $(document).ready(function () {
 	// Make Babel `translate`	action button dynamic.
 	// Meaning load the action as an iframe via magnific popup.
 	// Makes page translating much faster			
+	var $translateButton;
 	$(document).on('click', '.PageListActionBabel', function (e) {
-		var $translateButton, url;
+		var url;
 		$translateButton = $(this);
 		if (!$translateButton.is('a')) $translateButton = $translateButton.find('a');
 		if (!!$translateButton.data('magnificPopup')) return;
@@ -314,6 +340,11 @@ $(document).ready(function () {
 		});
 
 		$translateButton.trigger('click');
+	});
+
+	$(document.body).on('babel:action:edit babel:action:view', function (ev, url) {
+		$.magnificPopup.instance.close();
+		window.location.assign(url);
 	});
 	
 });

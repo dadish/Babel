@@ -721,8 +721,8 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$fieldset->add($field);
 			
 			// A language link
-			$field = $modules->get('InputfieldPage');
-			$field->inputfield = 'InputfieldPageListSelect';
+			require_once('InputfieldPageListSelectBabel.php');
+			$field = new InputfieldPageListSelectBabel();
 			$field->parent_id = $this->babel->getRoot($l)->id;
 
 			// If the $subject is Root page then let user

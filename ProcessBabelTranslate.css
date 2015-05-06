@@ -52,3 +52,18 @@
 .ProcessBabelTranslatePagination{
 	float: right;
 }
+
+.content .PageListActions.PageListActionsBabel{
+	width : 35%;
+	float : right;
+	text-align : right;
+}
+
+.content .PageListActions.PageListActionsBabel li:first-child:before{
+	content : '';
+}
+
+.InputfieldPageListSelectBabel .InputfieldContent .PageListRoot{
+	width : 65%;
+	float : left;
+}
