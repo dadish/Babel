@@ -340,12 +340,13 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 		// subject as an object. If so provide user of removing that
 		// link too
 		if ($objectId == 0) {
-			$objectObject = $subject->translation($language)->translation($subject->language);
+			$object = $subject->translation($language);
+			$objectObject = $object->translation($subject->language);
 			if ($subject->id === $objectObject->id) {
 				$out['hiddenValue'] = 'remove';
 				$out['inputfieldId'] = "wrap_Inputfield_babel_remove";
 				$out['replace'] = array(
-					'target_title' => $objectObject->title,
+					'target_title' => $object->title,
 					);
 			}
 		}
@@ -723,21 +724,24 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			// A language link
 			require_once('InputfieldPageListSelectBabel.php');
 			$field = new InputfieldPageListSelectBabel();
-			$field->parent_id = $this->babel->getRoot($l)->id;
+
+			$translatedParent = $subject->closestParentTranslation($l);
 
 			// If the $subject is Root page then let user
 			// choose target out of context
-			if (
-				$subject->is($this->babel->getRoot($subject->language)->path) && 
-				!$subject->parent instanceof NullPage
-			) {
+			if ($subject->is($this->babel->getRoot($subject->language)->path) && !$subject->parent instanceof NullPage) {
 				$field->parent_id = $subject->parent->id;
+			} else {
+				$field->parent_id = $this->babel->getRoot($l)->id;
 			}
 			
 			$field->name = "babel_object_$l->name";
 			$field->attr('value', $value);
 			$field->label = __("Target");
 			$field->showIf = "babel_type_$l->name=existing";
+			if ($translatedParent instanceof Page) {
+				$field->attr('open-ids', (string) $translatedParent->parents("id!=$field->parent_id")->append($translatedParent));
+			}
 			$fieldset->add($field);
 
 			// The field is there to control the visibility of
@@ -776,8 +780,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->showIf = "babel_type_$l->name=new";
 			$field->required = true;
 			$field->requiredIf = $field->showIf;
-			$translationParent = $this->getClosestTranslatedParent($subject, $l);
-			$field->value = $translationParent;
+			$field->value = $translatedParent;
 			$fieldset->add($field);
 
 			// Choose name for new page
@@ -791,10 +794,10 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$field->required = true;
 			$field->requiredIf = $field->showIf;
 			$name = $subject->name;
-			if ($translationParent->children("name=$name, include=all")->count()) {
+			if ($translatedParent->children("name=$name, include=all")->count()) {
 				$name  .= "-$l->name";
 			}
-			if ($translationParent->children("name=$name, include=all")->count()) {
+			if ($translatedParent->children("name=$name, include=all")->count()) {
 				$name .= "---" . date('d-m-Y--H-i-s');
 			}
 			$field->value = $name;
@@ -803,16 +806,6 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			$wrapper->add($fieldset);
 		}
 		return $wrapper;
-	}
-
-	protected function getClosestTranslatedParent(Page $page, Language $language)
-	{
-		$pages = $page->parents()->reverse();
-			foreach ($pages as $p) {
-				$translation = $p->translation($language);
-				if (!$translation instanceof NullPage) return $translation;
-			}
-		return $this->babel->getRoot($language);
 	}
 
 	/**
