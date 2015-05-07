@@ -53,6 +53,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 		$this->addHook('Page::translations', $this, 'pageTranslations');
 		$this->addHook('Page::addTranslation', $this, 'pageAddTranslation');
 		$this->addHook('Page::removeTranslation', $this, 'pageRemoveTranslation');
+		$this->addHook('Page::closestParentTranslation', $this, 'pageClosestParentTranslation');
 		$this->addHookBefore('Pages::deleteReady', $this, 'cleanTranslations');
 		$this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
 		$this->addHookBefore('Pages::saveReady', $this, 'fixConflicts');
@@ -463,6 +464,23 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	}
 
 	/**
+	 * Given a language id, name, instance returns a Language object
+	 * if the language can be found and is valid
+	 * @param int|str|Language $language A language that should be sanitized
+	 * @throws WireEception
+	 * @return Language A language object
+	 */
+	protected function sanitizeLanguage($language)
+	{
+		// If $language is not a Language object
+		// Try to get language by name or id
+		if (!$language instanceof Language) $language = $this->wire('languages')->get($language);
+		if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
+		if (!in_array($language->id, $this->include)) throw new WireException("Language $language->name is not handled by Babel");
+		return $language;
+	}
+
+	/**
 	 * Returns a translation for page for given language
 	 * or NullPage if there isn't one.
 	 * 
@@ -477,16 +495,29 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	protected function pageTranslation(HookEvent $event)
 	{
 		$page = $event->object;
-		$language = $event->arguments(0);
-
-		// If $language is not a Language object
-		// Try to get language by name or id
-		if (!$language instanceof Language) $language = wire('languages')->get($language);
-		if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
-		if (!in_array($language->id, $this->include)) throw new WireException("Language $language->name is not handled by Babel");
-
+		$language = $this->sanitizeLanguage($event->arguments(0));
 		$event->return = $this->getObject($page, $language);
 	}
+
+	/**
+	 * Returns the translation of the closests translatable parent of the page.
+	 * 
+	 * @param Language|int|string $language The language to which you want a translation
+	 * @throws WireException
+	 * @return Page The translations of the closest translatable parent
+	 */
+	protected function pageClosestParentTranslation(HookEvent $event)
+	{
+		$page = $event->object;
+		$language = $this->sanitizeLanguage($event->arguments[0]);
+		$pages = $page->parents()->reverse();
+			foreach ($pages as $p) {
+				$translation = $p->translation($language);
+				if (!$translation instanceof NullPage) return $event->return = $translation;
+			}
+		$event->return = $this->getRoot($language);
+	}
+
 
 	/**
 	 * Returns all translations for page
