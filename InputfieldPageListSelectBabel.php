@@ -21,6 +21,8 @@ class InputfieldPageListSelectBabel extends InputfieldPageListSelect {
 			return "<p class='error'>" . $this->_('Unable to render this field due to missing parent page in field settings.') . "</p>";
 		}
 
+		$openIds = $this->attr('open-ids') ? ", openPageIDs: '". $this->attr('open-ids') ."'.split('|')," : "";
+
 		$settings = "{ " . 
 			"mode: 'select', " . 
 			"rootPageID: {$this->parent_id}, " . 
@@ -32,6 +34,7 @@ class InputfieldPageListSelectBabel extends InputfieldPageListSelect {
 			"selectUnselectLabel: \"{$this->unselectLabel}\", " .
 			"moreLabel: \"{$this->moreLabel}\", " . 
 			"selectCancelLabel: \"{$this->cancelLabel}\" " . 
+			$openIds .
 		"}";
 
 		$out =	
