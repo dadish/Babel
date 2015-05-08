@@ -33,7 +33,8 @@ class Babel extends WireData implements Module, ConfigurableModule {
 			'href' => 'http://bushluk.com',
 			'singular' => true,
 			'autoload' => true, 
-			'icon' => 'language'
+			'icon' => 'language',
+			'requires' => array('LanguageSupport')
 			);
 	}
 
