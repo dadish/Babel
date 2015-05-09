@@ -38,6 +38,12 @@ class Babel extends WireData implements Module, ConfigurableModule {
 			);
 	}
 
+	public function __construct()
+	{
+		parent::__construct();
+		$this->pdo = wire('database');
+	}
+
 	static public function getDefaultData() {
 		$defaults = array(
 			'include' => array()
@@ -48,7 +54,6 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 	public function init()
 	{
-		$this->pdo = wire('database');
 		$this->addHookProperty('Page::language', $this, 'pageLanguage');
 		$this->addHook('Page::translation', $this, 'pageTranslation');
 		$this->addHook('Page::translations', $this, 'pageTranslations');
