@@ -396,8 +396,8 @@ class Babel extends WireData implements Module, ConfigurableModule {
 	{
 		if (!in_array($language->id, $this->include)) throw new WireException("The language $language->title is not managed by Babel.");
 		$root = "root_" . $language->name;
-		$path = $this->$root;
-		return wire('pages')->get($path);
+		$id = $this->$root;
+		return wire('pages')->get($id);
 	}
 
 	/**
@@ -746,7 +746,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
 		foreach (wire('languages') as $l){
 			$name = "root_" . $l->name;
-			$field = $modules->get('InputfieldText');
+			$field = $modules->get('InputfieldPageListSelect');
 			$field->label = "Root for $l->title";
 			$field->description = "Path to root page of the $l->title language.";
 			$field->attr('name', $name);
