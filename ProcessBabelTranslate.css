@@ -1,69 +1,69 @@
 .bblbr-l{
-	padding : 1rem;
+  padding : 1rem;
 }
 
 .bblbr-i{
-	display : inline !important;
+  display : inline !important;
 }
 
 .bbl-links-indicator{
-	font-size : 0.4em;
+  font-size : 0.4em;
 }
 
 .ProcessBabelTranslateProgress{
-	display: none;
+  display: none;
 }
 
 .ProcessBabelTranslateProgress.ProcessPage{
-	display: inline-block;
-	margin-left : 1rem;
+  display: inline-block;
+  margin-left : 1rem;
 }
 
 .ProcessBabelTranslateProgress.ProcessPage i{
-	font-size: 1.5rem !important;
+  font-size: 1.5rem !important;
 }
 
 .ProcessBabelTranslateContent{
-	width : 100%;
+  width : 100%;
 }
 
 .ProcessBabelTranslateTitle{
-	display : inline-block;
+  display : inline-block;
 }
 
 .content .MarkupPagerNav{
-	float : right;
+  float : right;
 }
 
 .content .MarkupPagerNav li{
-	padding : 3px;
+  padding : 3px;
 }
 
 .ProcessBabelTranslateInfo{
-	width : 100%;
-	min-height : 50px;
+  width : 100%;
+  min-height : 50px;
 }
 
 .ProcessBabelTranslateInfoTitle{
-	float : left;
-	width : 40%;
+  float : left;
+  width : 40%;
 }
 
 .ProcessBabelTranslatePagination{
-	float: right;
+  float: right;
 }
 
 .content .PageListActions.PageListActionsBabel{
-	width : 35%;
-	float : right;
-	text-align : right;
+  width : 35%;
+  float : right;
+  text-align : right;
 }
 
 .content .PageListActions.PageListActionsBabel li:first-child:before{
-	content : '';
+  content : '';
 }
 
 .InputfieldPageListSelectBabel .InputfieldContent .PageListRoot{
-	width : 65%;
-	float : left;
+  width : 65%;
+  float : left;
 }

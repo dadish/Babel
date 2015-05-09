@@ -11,1014 +11,1014 @@
 
 class ProcessBabelTranslate extends Process implements Module, ConfigurableModule {
 
-	/**
-	 * Storage for i18n strings.
-	 * In case if we use on of them more than once.
-	 */
-	protected $i18n = null;
-
-	/**
-	 * Path to this module's page. Populated on module initialization
-	 */
-	protected $pagePath = '';
-
-	/**
-	 * The number of page if the filtered pages are more than a $pagesLimit.
-	 * Default is 1.
-	 */
-	protected $pageNum = 1;
-
-	/**
-	 * The type of the filter that is applied to the translatable pages.
-	 * Default is 'Untranslated'.
-	 */
-	protected $filterType = 'Untranslated';
-
-	/**
-	 * The types of the filter that this module can handle so far
-	 */
-	protected $filterTypes = array();
-
-	/**
-	 * The language of the subject pages
-	 */
-	protected $fromLanguage = null;
-
-	/**
-	 * The language of the object pages
-	 */
-	protected $toLanguage = null;
-
-	/**
-	 * The translatable pages limit per Process Page
-	 */
-	protected $pagesLimit = 25;
-
-	/**
-	 * The pagesLimit variations
-	 */
-	protected $pagesLimits = array(
-		10,
-		25,
-		50,
-		75,
-		100
-		);
-
-	/**
-	 * The type of the action
-	 */
-	protected $actionType = 'translate';
-
-	/**
-	 * The types of the action
-	 */
-	protected $actionTypes = array(
-		'batch',
-		'translate',
-		'fieldObject'
-		);
-	
-
-	static public function getDefaultData() {
-		$defaults = array(
-			'translateButton' => true,
-			'translateTab' => true,
-			'translateLinks' => true
-		);
-		return $defaults;
-	}
-
-	/**
-	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
-	 *
-	 * @return array
-	 *
-	 */
-	public static function getModuleInfo() {
-		return array(
-			'title' => __('Babel Translate'), 
-			'version' => '0011', 
-			'summary' => __('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
-			'singular' => true,
-			'autoload' => "process=ProcessPageList|ProcessPageEdit",
-			'icon' => 'language',
-			'requires' => array('Babel', 'JqueryMagnific', 'LanguageSupport', 'MarkupAdminDataTable'),
-			'page' => array(
-				'parent' => 'page',
-				'name' => 'babel-translate',
-				'title' => 'Translations'
-				)
-			);
-	}
-
-	protected function fillUpI18n()
-	{
-		$this->i18n = array(
-			'remove_success'				=> __('Removed translation %2$s between `%1$s` and `%3$s`'),
-			'remove_failure'				=> __('Couldn\'t remove translation %2$s between `%1$s` and `%3$s`.'),
-			'add_success'						=> __('Added translation %2$s between `%1$s` and `%3$s`'),
-			'add_failure'						=> __('Couldn\'t add translation %2$s between `%1$s` and `%3$s`.'),
-			'create_success'				=> __('Created translation %2$s between `%1$s` and `%3$s`'),
-			'create_failure'				=> __('Couldn\'t create a %2$s translation page for `%1$s`.'),
-			'translate'							=> __('translate')
-			);
-	}
-
-	/**
-	 *
-	 *
-	 *
-	 */
-	public function init()
-	{
-		// Quick access to Babel
-		$this->babel = wire('modules')->get('Babel');
-		if (!$this->babel) return;
-
-		// Make sure FancyBox plugin is loaded
-		wire('modules')->get('JqueryMagnific');
-		parent::init();
-		$this->fillUpI18n();
-		if ($this->translateTab) $this->addHookAfter('ProcessPageEdit::buildForm', $this, 'hookLanguageTab');
-		if ($this->translateButton) $this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
-		if ($this->translateLinks) $this->addHookAfter('ProcessPageListRender::getPageLabel', $this, 'hookPageLabel');
-		if ($this->translateTab) $this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
-
-		$pageName = $this->getModuleInfo()['page']['name'];
-		$this->pagePath = $this->config->urls->admin . "page/$pageName/";
-
-		$this->filterTypes = array(
-			'Untranslated' => __('Untranslated'),
-			'Translated' => __('Translated')
-			);
-
-		// Set default js settings
-		$this->setJsSettings();
-	}
-
-	/**
-	 * Sets the JavaScript configurations
-	 * 
-	 * 
-	 */
-	protected function setJsSettings()
-	{
-		$settings = array();
-		$input = wire('input');
-		$languages = wire('languages');
-
-		// Set prefixes of the languages that are managed by Babel
-		$settings['languages'] = array();
-		foreach ($this->babel->include as $l) {
-			$language = $languages->get($l);
-			$settings['languages'][] = array(
-				'id' => $language->id,
-				'name' => $language->name
-				);
-		}
-		$id = $input->get->id;
-		$settings['pageId'] = $id;
-		$language = $this->pages->get($id)->language;
-		if ($language) $settings['currentLanguageName'] = $language->name;
-		$this->config->js($this->className, $settings);
-	}
-
-	/**
-	 * ProcessExecute method
-	 * 
-	 */
-	public function execute()
-	{
-		// Sanitize values before we react to them
-		$this->sanitizeGetVars();
-
-		$this->modules->get('MarkupAdminDataTable');
-		switch ($this->actionType) {
-			case 'translate':
-				return $this->executeTranslate();
-				break;
-
-			case 'fieldObject':
-				return $this->executeFieldObject();
-				break;
-		
-			case 'batch':
-				$out = '';
-				if ($this->config->ajax) {
-					$out = array('body' => '', 'info' => '');
-					$out['body'] = $this->renderProcessBody();
-					$out['info'] = $this->renderInfo();
-					return json_encode($out);
-				} else {
-					$out .= $this->renderProcessHeader();
-					$out .= $this->renderProcessFooter();
-				}				
-				return $out;
-				break;
-
-			default:
-				break;
-		}
-	}
-
-	/**
-	 *
-	 *
-	 * @throws WireException
-	 */
-	protected function sanitizeGetVars()
-	{
-		$languages = wire('languages');
-
-		// Sanitize page and assign to $this->pageNum
-		$page = $this->sanitizer->text($this->input->get->page);
-		if (!ctype_digit($page)) $page = 1;
-		$this->pageNum = (integer) $page;
-
-		// Sanitize from and assign to $this->fromLanguage
-		$from = (integer) $this->sanitizer->text($this->input->get->from);
-		if (in_array($from, $this->babel->include)) $from = $languages->get($from);
-		else $from = null;
-		$this->fromLanguage = $from;
-
-		// Sanitize to and assign to $this->toLanguage
-		$to = (integer) $this->sanitizer->text($this->input->get->to);
-		if (in_array($to, $this->babel->include)) $to = $languages->get($to);
-		else $to = null;
-		$this->toLanguage = $to;
-
-		// Sanitize the filter and assign it to $this->filterType
-		$filter = $this->sanitizer->text($this->input->get->filter);
-		if (!in_array($filter, array_keys($this->filterTypes))) $filter = $this->filterTypes['Untranslated'];
-		$this->filterType = $filter;
-
-		// Sanitize the action and assign it to $this->actionType
-		$action = $this->sanitizer->text($this->input->action);
-		if (!in_array($action, $this->actionTypes)) $action = $this->actionTypes[0];
-		$this->actionType = $action;
-
-		// Sanitize the limit and assign it to $this->pagesLimit
-		$limit = (integer) $this->sanitizer->text($this->input->limit);
-		if (!in_array($limit, $this->pagesLimits)) $limit = $this->pagesLimits[1];
-		$this->pagesLimit = $limit;
-	}
-
-	/**
-	 * Handles page translation
-	 */
-	public function executeTranslate()
-	{
-		$modules = wire('modules');
-		$input = wire('input');
-
-		// find the page first
-		$id = $input->id;
-		$id = (integer) wire('sanitizer')->text($id);
-		$page = wire('pages')->get($id);
-		
-		if ($page instanceof NullPage) return __("Unknown page to translate.");
-
-		// Overwrite the breadcrumbs
-		$this->setupBreadcrumbs($page);
-		$this->headline($page->get('headline|title'));
-
-		if (!$this->babel->translatable($page)) return __("This page cannot be translated via Babel.");
-
-		if ($input->post->submit_babel_translate) {
-			$this->updateLinks($page);
-		}
-
-		$form = $modules->get('InputfieldForm');
-		$form->attr('method', 'POST');
-		$form->attr('action', $this->pageTranslateUrl($page));
-		$form->add($this->buildTranslateTab($page));
-
-		$field = $modules->get('InputfieldSubmit');
-		$field->attr('id+name', 'submit_babel_translate');
-		$field->attr('value', __("Save"));
-		$form->add($field);
-
-		$breadcrumbs = "";
-	
-		if ($input->get->modal) {
-			$breadcrumbs =	"<ul id='breadcrumb' class='bblbr-l'>";
-			foreach(wire('breadcrumbs') as $breadcrumb) {
-				$breadcrumbs .=  "\n\t\t\t\t<li class='bblbr-i'>$breadcrumb->title &gt;</li>";
-			}
-			$breadcrumbs .=  "\n\t\t\t\t<li class='bblbr-i'>$page->title</li>";
-			$breadcrumbs .= "</ul>";
-		}
-		
-		return $breadcrumbs . $form->render();
-	}
-
-	/**
-	 * Handles change of the object field
-	 * 
-	 */
-	protected function executeFieldObject()
-	{
-		$input = wire('input');
-		$pages = wire('pages');
-		$languages = wire('languages');
-		
-		$subject = $pages->get($input->get->id);
-		$objectId = $input->get->object;
-		$language = $languages->get($input->get->language);
-
-		$out = array();
-		$out['action'] = 'fieldObject';
-		$out['follow'] = 'dependency';
-		$out['hiddenValue'] = '';
-		$out['inputfieldId'] = '';
-		$out['replace'] = array();
-
-		// If the objectId is 0 then the user trying to remove
-		// the object. See if the object is pointing back to our 
-		// subject as an object. If so provide user of removing that
-		// link too
-		if ($objectId == 0) {
-			$object = $subject->translation($language);
-			$objectObject = $object->translation($subject->language);
-			if ($subject->id === $objectObject->id) {
-				$out['hiddenValue'] = 'remove';
-				$out['inputfieldId'] = "wrap_Inputfield_babel_remove";
-				$out['replace'] = array(
-					'target_title' => $object->title,
-					);
-			}
-		}
-		
-		// If the object already has a translation
-		// and it is not the $subject then provide user 
-		// an option to overwrite objects translation
-		$object = $pages->get($objectId);
-		$objectObject = $object->translation($subject->language);
-		if (!$objectObject instanceof NullPage && $subject->id !== $objectObject->id) {
-			$out['hiddenValue'] = 'overwrite';
-			$out['inputfieldId'] = 'wrap_Inputfield_babel_overwrite';
-			$out['replace'] = array(
-				'object' => $object->title,
-				'object_object' => $objectObject->title
-				);
-		}
-
-		if (!isset($out['hiddenValue'])) {
-			$out['dependency'] = 'blob';
-		}
-
-		return json_encode($out);
-	}
-
-	/**
-	 * Prepares the header for module process
-	 * page. This should be used only for regular (non ajax)
-	 * page requests.
-	 * 
-	 * @return string.
-	 */
-	protected function renderProcessHeader()
-	{
-		$out = "<div class='ProcessBabelTranslateTop'>";
-		$out .= "<h2 class='ProcessBabelTranslateTitle'>". $this->getModuleInfo()['title'] ."</h2>";
-		$out .= "<div class='ProcessBabelTranslateProgress ProcessPage'><i class='icon fa fa-fw fa-spinner fa-spin'></i></div>";
-		$out .= "</div>";
-		$out .= $this->renderProcessForm();
-		return $out;
-	}
-
-	/**
-	 * Render process form
-	 *
-	 * @param string.
-	 */
-	protected function renderProcessForm()
-	{
-		$languages = new PageArray();
-		$LanguageIds = $this->babel->include;
-		for ($i = 0; $i < count($LanguageIds); $i++) {
-			$language = wire('languages')->get($LanguageIds[$i]);
-			$languages->add($language);
-		}
-
-		$form = $this->modules->get('InputfieldForm');
-		$form->name = 'ProcessBabelTranslateHeader';
-		$form->attr('data-babel-batch-form', '1');
-
-		// Translated or untranslated
-		$field = $this->modules->get('InputfieldSelect');
-		$field->name = 'filter';
-		$field->label = __('Pages that are...');
-		$field->required = true;
-		foreach ($this->filterTypes as $type => $label) {
-			$field->addOption($type, $label);
-		}
-		$field->value = $this->filterType;
-		$field->columnWidth = 25;
-		$form->add($field);
-
-		// from language
-		$field = $this->modules->get('InputfieldSelect');
-		$field->name = 'from';
-		$field->label = __('From...');
-		foreach ($languages as $l) {
-			$field->addOption($l->id, $l->get('title|name'));
-		}
-		$field->value = $this->fromLanguage;
-		$field->columnWidth = 25;
-		$form->add($field);
-
-		// to language
-		$field = $this->modules->get('InputfieldSelect');
-		$field->name = 'to';
-		$field->label = __('To...');
-		foreach ($languages as $l) {
-			$field->addOption($l->id, $l->get('title|name'));
-		}
-		$field->value = $this->toLanguage;
-		$field->columnWidth = 25;
-		$form->add($field);
-
-		// limit
-		$field = $this->modules->get('InputfieldSelect');
-		$field->name = 'limit';
-		$field->label = __('Limit pages to...');
-		foreach ($this->pagesLimits as $limit) {
-			$field->addOption($limit);
-		}
-		$field->value = $this->pagesLimit;
-		$field->columnWidth = 25;
-		$form->add($field);
-
-		return $form->render();
-	}
-
-
-	/**
-	 * Prepares the body for module process
-	 * page. Should be used for both ajax and
-	 * regular page requests.
-	 * 
-	 * @return string.
-	 */
-	protected function renderProcessBody()
-	{	
-		$pagesMethod = 'get' . $this->filterType;
-		$pages = $this->babel->$pagesMethod($this->fromLanguage, $this->toLanguage, $this->pagesLimit, $this->pageNum);
-		return $this->renderProcessTable($pages);
-	}
-
-	/**
-	 * Prepares the header for module process
-	 * page. This should be used only for regular (non ajax)
-	 * page requests.
-	 * 
-	 * @return string.
-	 */
-	protected function renderProcessFooter()
-	{
-		$out = "<div class='ProcessBabelTranslateContent'>";
-		$out .= "<div class='ProcessBabelTranslateInfo'></div>";
-		$out .= "<div class='ProcessBabelTranslateBody'></div>";
-		$out .= "<div class='ProcessBabelTranslateInfo'></div>";
-		$out .= "</div>";
-		return $out;
-	}
-
-	/**
-	 * Renders the pages into AdminDataTable
-	 * 
-	 * @param PageArray $pages The pages that will be rendered
-	 * @return string
-	 */
-	protected function renderProcessTable(PageArray $pages)
-	{
-		$table = $this->modules->get('MarkupAdminDataTable');
-		$table->setEncodeEntities(false);
-		$table->headerRow(array(__('Id'), __('Lang'), __('Title'), __('Path'), __('Template')));
-		foreach ($pages as $p) {
-			$table->row($this->prepareProcessTableRow($p));
-		}
-		return $table->render();
-	}
-
-	/**
-	 * Prepares an array for MarkupAdminDataTable
-	 * 
-	 * @param Page $page The page that will be prpared
-	 * @return Array
-	 */
-	protected function prepareProcessTableRow(Page $page)
-	{
-		$out = array();
-
-		// add id
-		$out[] = $page->id;
-
-		// add language
-		$language = $page->language;
-		$out[] = ($language && $language instanceof Language) ? $language->get('title|name') : 'not available';
-
-		// Add title
-		$title = $page->get('title|name');
-		$url = $this->pageTranslateUrl($page);
-		$out[] = "<a class='PageListActionBabel' href='$url'>$title</a>";
-
-		// add path
-		$out[] = $page->path;
-
-		// add template
-		$out[] = $page->template->name;
-		return $out;
-	}
-
-	/**
-	 * Render pager
-	 * 
-	 * @param int $current
-	 * @param int $total
-	 * @param 
-	 * 
-	 */
-	protected function renderInfo()
-	{
-		$path = $this->config->paths->wire . 'modules/Markup/MarkupPagerNav/PagerNav.php';
-		include("$path");
-		$totalMethod = 'get' . $this->filterType . 'Total';
-		$total = $this->babel->$totalMethod($this->fromLanguage, $this->toLanguage);
-		$pager = new PagerNav($total, $this->pagesLimit, $this->pageNum);
-		$pager->setLabels('<i class="fa fa-angle-left"></i>', '<i class="fa fa-angle-right"></i>');
-
-		$start = $this->pagesLimit * ($this->pageNum - 1);
-		$end = $this->pagesLimit * $this->pageNum;
-		if ($end > $total) $end = $total;
-		$title = "<h2 class='ProcessBabelTranslateInfoTitle'>". sprintf(__('%1$s to %2$s of %3$s'), $start, $end, $total) ."</h2>";
-
-		$pagination = "<ul class='MarkupPagerNav ProcessBabelTranslatePagination'>";
-		foreach($pager as $item) {
-			$pageLabel = $item->label;
-			$pageUrl = $this->pagePath . "?page=$item->pageNum";
-			$pageUrl .= "&filter=$this->filterType";
-			$pageUrl .= "&from=$this->fromLanguage";
-			$pageUrl .= "&to=$this->toLanguage";
-			$pageUrl .= "&limit=$this->pagesLimit";
-			$classes = array();
-			switch ($item->type) {
-				
-				case PagerNavItem::typeCurrent:
-				$classes[] = 'MarkupPagerNavOn';
-				break;
-
-				case PagerNavItem::typeFirst:
-				$classes[] = 'MarkupPagerNavFirst';
-				break;
-
-				case PagerNavItem::typePrevious:
-				$classes[] = 'MarkupPagerNavPrevious';
-				break;
-
-				case PagerNavItem::typeNext:
-				$classes[] = 'MarkupPagerNavNext';
-				break;
-
-				case PagerNavItem::typeLast:
-				$classes[] = 'MarkupPagerNavLast';
-				break;
-
-				case PagerNavItem::typeSeparator:
-				$classes[] = 'MarkupPagerNavSeparator';
-				$pageLabel = '...';
-				break;
-
-				default:
-					# code...
-					break;
-			}
-			$classes = implode(' ', $classes);
-			if ($item->type === PagerNavItem::typeSeparator) {
-				$pagination .= "<li class='$classes'><span class='detail'>$pageLabel</span></li>";	
-			} else {
-				$pagination .= "<li class='$classes'><a class='ProcessBabelPageLink' href='$pageUrl'>$pageLabel</a></li>";	
-			}
-			
-		}
-		$pagination .= "</ul>";
-		return $title . $pagination;
-	}
-
-	/**
-	 * Hook method that adds a Translation Tab for all pages that are managed by 
-	 * Babel. 
-	 */
-	protected function hookLanguageTab($event)
-	{
-		// Find out what page we are editing
-		$id = (int) $this->input->post('id');
-		if(!$id) $id = (int) $this->input->get('id');
-		$page = wire('pages')->get("id=$id");
-
-		// If page is not translatable by Babel then return
-		if (!$this->babel->translatable($page)) return;
-
-		$form = $event->arguments[0];
-		$processPageEdit = $event->object;
-		$translationTab = $this->buildTranslateTab($page);
-		$processPageEdit->addTab($translationTab->attr('id'), $translationTab->attr('title'));
-		$form->insertBefore($translationTab, $form->get('submit_save'));
-		$event->return = $form;
-	}
-
-	/**
-	 * Hook method. Adds a `Translate` action button.
-	 * 
-	 */
-	protected function hookActionButtons($event)
-	{
-		$value = $event->return;
-		$page = $event->arguments(0);
-		if (!$this->babel->translatable($page)) return;
-		
-		$value[] = array(
-			'cn' => 'Babel',
-			'name' => $this->i18n['translate'],
-			'url' => $this->pageTranslateUrl($page)
-			);
-
-		$event->return = $value;
-	}
-
-	/**
-	 * Returns a Babel translate url for page
-	 * @param Page $page The page that you want to translate
-	 * @return string
-	 */
-	protected function pageTranslateUrl(Page $page)
-	{
-		return $this->pagePath . "?action=translate&id=$page->id";
-	}
-
-	/**
-	 * Hook method. Adds links to the PageListLabel.
-	 * 
-	 * 
-	 * 
-	 */
-	protected function hookPageLabel($event)
-	{
-		$label = $event->return;
-		$page = $event->arguments(0);
-		$links = $page->translations();
-		if (!$links->count()) return;
-		$label .= "<span class='bbl-links-indicator'>(";
-		foreach ($links as $p) {
-			$lang_name = $p->language->name;
-			$label .= "$lang_name+";
-			if ($links->getNext($p) !== null) $label .= " ";
-		}
-		$label .= ")</span>";
-		$event->return = $label;
-	}
-
-	/**
-	 * Builds a proper Translation Tab for a given Page. Should be able 
-	 * to use it for quick action button translation too.
-	 *
-	 * @param $subject Page object. The Page for which the TranslationTab for.
-	 */
-	protected function buildTranslateTab(Page $subject)
-	{
-		$modules = wire('modules');
-		$languages = wire('languages');
-		$wrapper = new InputfieldWrapper();
-		$id = $this->className();
-		$wrapper->attr('id', $id);
-		$title = $this->_('Translate'); // Tab Label: Translate
-		$wrapper->attr('title', $title); 
-		$wrapper->attr('data-babel-translate-form', '1');
-
-		foreach ($this->babel->include as $l) {
-			$l = $languages->get($l);
-			if ($subject->language === $l) continue;
-			$value = $subject->translation($l);
-
-			// Open a fieldSet
-			$fieldset = $modules->get('InputfieldFieldset');
-			$fieldset->name = "babel_$l->name";
-			$fieldset->label = $l->title;
-			$fieldset->collapsed = Inputfield::collapsedNo;
-
-			// Create new page or choose existing
-			$field = $modules->get('InputfieldRadios');
-			$field->name = "babel_type_$l->name";
-			$field->label = __('Translate by...');
-			//$field->required = true;
-			$field->addOptions(array(
-				'existing' => __('Choosing existing page'),
-				'new' => __('Creating new one')
-				));
-			if (!$value instanceof NullPage) $field->value = 'existing';
-			$fieldset->add($field);
-			
-			// A language link
-			require_once('InputfieldPageListSelectBabel.php');
-			$field = new InputfieldPageListSelectBabel();
-
-			$translatedParent = $subject->closestParentTranslation($l);
-
-			// If the $subject is Root page then let user
-			// choose target out of context
-			if ($subject->is($this->babel->getRoot($subject->language)->path) && !$subject->parent instanceof NullPage) {
-				$field->parent_id = $subject->parent->id;
-			} else {
-				$field->parent_id = $this->babel->getRoot($l)->id;
-			}
-			
-			$field->name = "babel_object_$l->name";
-			$field->attr('value', $value);
-			$field->label = __("Target");
-			$field->showIf = "babel_type_$l->name=existing";
-			if ($translatedParent instanceof Page) {
-				$field->attr('open-ids', (string) $translatedParent->parents("id!=$field->parent_id")->append($translatedParent));
-			}
-			$fieldset->add($field);
-
-			// The field is there to control the visibility of
-			// available options when changing the object value
-			$field = $this->modules->get('InputfieldHidden');
-			$field->name = "babel_hidden_$l->name";
-			$field->attr('value', 'blob');
-			$fieldset->add($field);
-
-			// If Babel should Overwrite target's language link
-			// to point it to this Page
-			$field = $this->modules->get('InputfieldCheckbox');
-			$field->label = __('Overwrite');
-			$field->description = sprintf(__('The %1$s is pointing to %2$s as a %3$s translation. Do you wish to overwrite that link and point it back to this page as a %3$s translation?'), "{{object}}", "{{object_object}}", $subject->language->title);
-			$field->name = "babel_overwrite_$l->name";
-			$field->showIf = "babel_type_$l->name=existing, babel_hidden_$l->name=overwrite";
-			$fieldset->add($field);
-
-			// If Babel should Remove target's language link
-			// that points to this page if user is removing 
-			// the current language link
-			$field = $modules->get('InputfieldCheckbox');
-			$field->label = __('Remove');
-			$field->description = sprintf(__('The %1$s is pointing back to this page. Would you like to remove that link too?'), "{{target_title}}");
-			$field->name = "babel_remove_$l->name";
-			$field->showIf = "babel_type_$l->name=existing, babel_hidden_$l->name=remove";
-			$fieldset->add($field);
-
-			// Choose parent for new page
-			$field = $modules->get('InputfieldPage');
-			$field->inputfield = 'InputfieldPageListSelect';
-			$field->parent_id = $this->babel->getRoot($l)->id;
-			$field->name = "babel_parent_$l->name";
-			$field->label = __('Parent Page');
-			$field->description = __('Choose the parent for the new page');
-			$field->showIf = "babel_type_$l->name=new";
-			$field->required = true;
-			$field->requiredIf = $field->showIf;
-			$field->value = $translatedParent;
-			$fieldset->add($field);
-
-			// Choose name for new page
-			$field = $modules->get('InputfieldName');
-			$field->name = "babel_name_$l->name";
-			$field->label = __('Page Name');
-			$field->description = __('Choose a name for your new page.');
-			$field->attr('data-note',  $this->_('The name entered is already in use. If you do not modify it, the name will be made unique automatically after you save.'));
-
-			$field->showIf = "babel_type_$l->name=new";
-			$field->required = true;
-			$field->requiredIf = $field->showIf;
-			$name = $subject->name;
-			if ($translatedParent->children("name=$name, include=all")->count()) {
-				$name  .= "-$l->name";
-			}
-			if ($translatedParent->children("name=$name, include=all")->count()) {
-				$name .= "---" . date('d-m-Y--H-i-s');
-			}
-			$field->value = $name;
-			$fieldset->add($field);
-
-			$wrapper->add($fieldset);
-		}
-		return $wrapper;
-	}
-
-	/**
-	 * Updates the Babel links
-	 */
-	protected function updateLinks(Page $page)
-	{
-		$pages = wire('pages');
-		$input = wire('input');
-		$languages = wire('languages');
-
-		foreach ($this->babel->include as $l) {
-			$l = $languages->get($l);
-
-			// If page's language is $l
-			// then skip
-			if ($page->language === $l) continue;
-
-			// Get the input data
-			$object = $input->post("babel_object_$l->name");
-			$overwrite_object = $input->post("babel_overwrite_$l->name");
-			$remove_object = $input->post("babel_remove_$l->name");
-			$type = $input->post("babel_type_$l->name");
-			
-			// If user is trying to create a new page
-			// then make neccessary modifications 
-			if ($type === 'new') {
-				$overwrite_object = true;
-				$remove_object = true;
-				$parent = $input->post("babel_parent_$l->name");
-				$name = $input->post("babel_name_$l->name");
-
-				// check if the parent is valid
-				$parent = $pages->get("id=$parent");
-				if ($parent instanceof NullPage || !$parent->language || $parent->language->id !== $l->id) {
-					$this->error('Parent is not valid!');
-					return;
-				}
-
-				// check if the name is unique
-				// if not make it unique
-				if ($parent->children("name=$name, include=all")->count()) {
-					$name .= "-" . date('d-m-Y--H-i-s');
-				}
-
-				$object = new Page();
-				$object->of(false);
-				$object->template = $page->template;
-				$object->parent = $parent;
-				$object->name = $name;
-				$object->title = $name;
-				$this->copyPage($page, $object);
-				$object->save();
-				$object = $object->id;
-			}
-
-			// If the value is empty or cannot be finded
-			// remove translation $l for $page
-			if (!$object || $pages->get($object) instanceof NullPage) {
-				
-				// Check if we actually have that link in babel_links table
-				$object = $page->translation($l);
-				if (!$object instanceof NullPage) {
-
-					// Try to remove the link and send message to the user 
-					// about the status of the removal
-					$i18n_str = $page->removeTranslation($l, $remove_object) ? 'success' : 'failure';
-					$this->message(sprintf($this->i18n["remove_$i18n_str"], $page->title, $object->language->title, $object->title));
-				} else {
-					continue;
-				}
-
-			// Create the link
-			} else {
-				$object = $pages->get("id=$object");
-				$i18n_str = $page->addTranslation($object, $overwrite_object) ? 'success' : 'failure';
-				if ($type === 'new') {
-					$i18n_str = "create_$i18n_str";
-				} else {
-					$i18n_str = "add_$i18n_str";
-				}
-				$this->message(sprintf($this->i18n[$i18n_str], $page->title, $object->language->title, $object->title));
-			}
-		}
-	}
-
-	/**
-	 * Copies all fields from first page into second.
-	 * 
-	 * @param Page $from The page from which the fields will 
-	 *        be populated
-	 * @param Page $to The page into which the fields will
-	 * 				be populated
-	 * @return undefined;
-	 * @throws WireException
-	 */ 
-	protected function copyPage(Page $from, Page $to)
-	{
-		if ($from->template->id !== $to->template->id) throw new WireException("Provided pages for copy should have the same template.");
-
-		$verboseTypes = array(
-			'FieldtypeFile',
-			'FieldtypeImage',
-			'FieldtypeRepeater',
-			'FieldtypeComments',
-			'FieldtypeCache',
-			'FieldtypeFieldsetClose',
-			'FieldtypeFieldsetOpen',
-			'FieldtypeFieldsetTabOpen',
-			'FieldtypePageTable'
-			);
-
-		$toLanguage = $to->language;
-
-		foreach ($from->fields as $field) {
-			if (in_array($field->type, $verboseTypes)) continue;
-			$name = $field->name;
-			if ($field->type == 'FieldtypePage') {
-				if ($field->derefAsPage == FieldtypePage::derefAsPageArray) {
-					foreach ($from->$name as $page) {
-						$translation = $page->translation($toLanguage);
-						if ($translation && $translation instanceof Page) $to->$name->add($translation);
-					}
-				} else if ($from->$name instanceof Page){
-					$translation = $from->$name->translation($toLanguage);
-					if ($translation && $translation instanceof Page);
-					$to->$name = $translation;
-				}
-			} else {
-				$to->$name = $from->$name;	
-			}
-		}
-	}
-
-	/**
-	 * Hook method for updateLinks
-	 * Does nothing but proxying updateLinks
-	 * method to be callable with HookEvent argument
-	 *
-	 */
-	protected function hookUpdateLinks($event)
-	{
-		// Do nothing if we are not dealing with
-		// page edit or babel translate
-		$input = wire('input');
-		if (!$input->post->submit_save && !$input->post->submit_babel_translate) return;
-
-		return $this->updateLinks($event->arguments(0));
-	}
-
-	/**
-	 * Overwrites the wire('breadcrumbs');
-	 * @param Page $page. The page for which the 
-	 *				breadcrumbs for.
-	 */
-	protected function setupBreadcrumbs($page)
-	{
-		wire('breadcrumbs')->removeAll();
-		$parents = $page->parents();
-		$parents->shift();
-		foreach ($parents as $b) {			
-			$crumb = new Breadcrumb();
-			$crumb->set('url', $this->config->urls->admin . "page/?open=$b->id");
-			$crumb->set('title', $b->get('title|name'));
-			wire('breadcrumbs')->add($crumb);
-		}
-		$this->addHookProperty('Page::title', $this, 'getNameIfNoTitle');
-	}
-
-	/**
-	 * Returns name if title does not exist.
-	 * This is for solving breadcrumbs problem on
-	 * translate action via modal
-	 * @return string
-	 */
-	protected function getNameIfNoTitle(HookEvent $event)
-	{
-		if(!$event->return) $event->return = $event->object->name;
-	}
-
-	/**
-	 * Returns configuration fields for Babel 
-	 */
-	static public function getModuleConfigInputfields(array $data)
-	{
-		$data = array_merge(self::getDefaultData(), $data);
-		$modules = wire('modules');
-		$form = new InputfieldWrapper();
-
-		$field = $modules->get("InputfieldCheckbox");
-		$field->attr('name', 'translateButton');
-		$field->attr('checked', $data['translateButton']);
-		$field->label = __("Translate Action Button");
-		$field->description = __('Wheather you want to have a `translate` action button for each page on PageList.');
-		$field->columnWidth = 50;
-		$form->add($field);
-
-		$field = $modules->get("InputfieldCheckbox");
-		$field->attr('name', 'translateTab');
-		$field->attr('checked', $data['translateTab']);
-		$field->label = __("Translate Tab");
-		$field->description = __('Wheather you want to have a `Translate` tab for each page on PageEdit.');
-		$field->columnWidth = 50;
-		$form->add($field);
-
-		$field = $modules->get("InputfieldCheckbox");
-		$field->attr('name', 'translateLinks');
-		$field->attr('checked', $data['translateLinks']);
-		$field->label = __("PageList links indicator");
-		$field->description = __('Wheather you want to have links indicator of the translations on the admin Page List Tree. A little visual cue that states if pages has a translations assigned and which ones.');
-		$field->columnWidth = 50;
-		$form->add($field);
-
-		return $form;
-	}
-
+  /**
+   * Storage for i18n strings.
+   * In case if we use on of them more than once.
+   */
+  protected $i18n = null;
+
+  /**
+   * Path to this module's page. Populated on module initialization
+   */
+  protected $pagePath = '';
+
+  /**
+   * The number of page if the filtered pages are more than a $pagesLimit.
+   * Default is 1.
+   */
+  protected $pageNum = 1;
+
+  /**
+   * The type of the filter that is applied to the translatable pages.
+   * Default is 'Untranslated'.
+   */
+  protected $filterType = 'Untranslated';
+
+  /**
+   * The types of the filter that this module can handle so far
+   */
+  protected $filterTypes = array();
+
+  /**
+   * The language of the subject pages
+   */
+  protected $fromLanguage = null;
+
+  /**
+   * The language of the object pages
+   */
+  protected $toLanguage = null;
+
+  /**
+   * The translatable pages limit per Process Page
+   */
+  protected $pagesLimit = 25;
+
+  /**
+   * The pagesLimit variations
+   */
+  protected $pagesLimits = array(
+    10,
+    25,
+    50,
+    75,
+    100
+    );
+
+  /**
+   * The type of the action
+   */
+  protected $actionType = 'translate';
+
+  /**
+   * The types of the action
+   */
+  protected $actionTypes = array(
+    'batch',
+    'translate',
+    'fieldObject'
+    );
+  
+
+  static public function getDefaultData() {
+    $defaults = array(
+      'translateButton' => true,
+      'translateTab' => true,
+      'translateLinks' => true
+    );
+    return $defaults;
+  }
+
+  /**
+   * getModuleInfo is a module required by all modules to tell ProcessWire about them
+   *
+   * @return array
+   *
+   */
+  public static function getModuleInfo() {
+    return array(
+      'title' => __('Babel Translate'), 
+      'version' => '0011', 
+      'summary' => __('A helper module for Babel. Adds ui for managing Babel translations on admin interface.'),
+      'singular' => true,
+      'autoload' => "process=ProcessPageList|ProcessPageEdit",
+      'icon' => 'language',
+      'requires' => array('Babel', 'JqueryMagnific', 'LanguageSupport', 'MarkupAdminDataTable'),
+      'page' => array(
+        'parent' => 'page',
+        'name' => 'babel-translate',
+        'title' => 'Translations'
+        )
+      );
+  }
+
+  protected function fillUpI18n()
+  {
+    $this->i18n = array(
+      'remove_success'        => __('Removed translation %2$s between `%1$s` and `%3$s`'),
+      'remove_failure'        => __('Couldn\'t remove translation %2$s between `%1$s` and `%3$s`.'),
+      'add_success'           => __('Added translation %2$s between `%1$s` and `%3$s`'),
+      'add_failure'           => __('Couldn\'t add translation %2$s between `%1$s` and `%3$s`.'),
+      'create_success'        => __('Created translation %2$s between `%1$s` and `%3$s`'),
+      'create_failure'        => __('Couldn\'t create a %2$s translation page for `%1$s`.'),
+      'translate'             => __('translate')
+      );
+  }
+
+  /**
+   *
+   *
+   *
+   */
+  public function init()
+  {
+    // Quick access to Babel
+    $this->babel = wire('modules')->get('Babel');
+    if (!$this->babel) return;
+
+    // Make sure FancyBox plugin is loaded
+    wire('modules')->get('JqueryMagnific');
+    parent::init();
+    $this->fillUpI18n();
+    if ($this->translateTab) $this->addHookAfter('ProcessPageEdit::buildForm', $this, 'hookLanguageTab');
+    if ($this->translateButton) $this->addHookAfter('ProcessPageListRender::getPageActions', $this, 'hookActionButtons');
+    if ($this->translateLinks) $this->addHookAfter('ProcessPageListRender::getPageLabel', $this, 'hookPageLabel');
+    if ($this->translateTab) $this->addHookAfter('Pages::saved', $this, 'hookUpdateLinks');
+
+    $pageName = $this->getModuleInfo()['page']['name'];
+    $this->pagePath = $this->config->urls->admin . "page/$pageName/";
+
+    $this->filterTypes = array(
+      'Untranslated' => __('Untranslated'),
+      'Translated' => __('Translated')
+      );
+
+    // Set default js settings
+    $this->setJsSettings();
+  }
+
+  /**
+   * Sets the JavaScript configurations
+   * 
+   * 
+   */
+  protected function setJsSettings()
+  {
+    $settings = array();
+    $input = wire('input');
+    $languages = wire('languages');
+
+    // Set prefixes of the languages that are managed by Babel
+    $settings['languages'] = array();
+    foreach ($this->babel->include as $l) {
+      $language = $languages->get($l);
+      $settings['languages'][] = array(
+        'id' => $language->id,
+        'name' => $language->name
+        );
+    }
+    $id = $input->get->id;
+    $settings['pageId'] = $id;
+    $language = $this->pages->get($id)->language;
+    if ($language) $settings['currentLanguageName'] = $language->name;
+    $this->config->js($this->className, $settings);
+  }
+
+  /**
+   * ProcessExecute method
+   * 
+   */
+  public function execute()
+  {
+    // Sanitize values before we react to them
+    $this->sanitizeGetVars();
+
+    $this->modules->get('MarkupAdminDataTable');
+    switch ($this->actionType) {
+      case 'translate':
+        return $this->executeTranslate();
+        break;
+
+      case 'fieldObject':
+        return $this->executeFieldObject();
+        break;
+    
+      case 'batch':
+        $out = '';
+        if ($this->config->ajax) {
+          $out = array('body' => '', 'info' => '');
+          $out['body'] = $this->renderProcessBody();
+          $out['info'] = $this->renderInfo();
+          return json_encode($out);
+        } else {
+          $out .= $this->renderProcessHeader();
+          $out .= $this->renderProcessFooter();
+        }
+        return $out;
+        break;
+
+      default:
+        break;
+    }
+  }
+
+  /**
+   *
+   *
+   * @throws WireException
+   */
+  protected function sanitizeGetVars()
+  {
+    $languages = wire('languages');
+
+    // Sanitize page and assign to $this->pageNum
+    $page = $this->sanitizer->text($this->input->get->page);
+    if (!ctype_digit($page)) $page = 1;
+    $this->pageNum = (integer) $page;
+
+    // Sanitize from and assign to $this->fromLanguage
+    $from = (integer) $this->sanitizer->text($this->input->get->from);
+    if (in_array($from, $this->babel->include)) $from = $languages->get($from);
+    else $from = null;
+    $this->fromLanguage = $from;
+
+    // Sanitize to and assign to $this->toLanguage
+    $to = (integer) $this->sanitizer->text($this->input->get->to);
+    if (in_array($to, $this->babel->include)) $to = $languages->get($to);
+    else $to = null;
+    $this->toLanguage = $to;
+
+    // Sanitize the filter and assign it to $this->filterType
+    $filter = $this->sanitizer->text($this->input->get->filter);
+    if (!in_array($filter, array_keys($this->filterTypes))) $filter = $this->filterTypes['Untranslated'];
+    $this->filterType = $filter;
+
+    // Sanitize the action and assign it to $this->actionType
+    $action = $this->sanitizer->text($this->input->action);
+    if (!in_array($action, $this->actionTypes)) $action = $this->actionTypes[0];
+    $this->actionType = $action;
+
+    // Sanitize the limit and assign it to $this->pagesLimit
+    $limit = (integer) $this->sanitizer->text($this->input->limit);
+    if (!in_array($limit, $this->pagesLimits)) $limit = $this->pagesLimits[1];
+    $this->pagesLimit = $limit;
+  }
+
+  /**
+   * Handles page translation
+   */
+  public function executeTranslate()
+  {
+    $modules = wire('modules');
+    $input = wire('input');
+
+    // find the page first
+    $id = $input->id;
+    $id = (integer) wire('sanitizer')->text($id);
+    $page = wire('pages')->get($id);
+    
+    if ($page instanceof NullPage) return __("Unknown page to translate.");
+
+    // Overwrite the breadcrumbs
+    $this->setupBreadcrumbs($page);
+    $this->headline($page->get('headline|title'));
+
+    if (!$this->babel->translatable($page)) return __("This page cannot be translated via Babel.");
+
+    if ($input->post->submit_babel_translate) {
+      $this->updateLinks($page);
+    }
+
+    $form = $modules->get('InputfieldForm');
+    $form->attr('method', 'POST');
+    $form->attr('action', $this->pageTranslateUrl($page));
+    $form->add($this->buildTranslateTab($page));
+
+    $field = $modules->get('InputfieldSubmit');
+    $field->attr('id+name', 'submit_babel_translate');
+    $field->attr('value', __("Save"));
+    $form->add($field);
+
+    $breadcrumbs = "";
+  
+    if ($input->get->modal) {
+      $breadcrumbs =  "<ul id='breadcrumb' class='bblbr-l'>";
+      foreach(wire('breadcrumbs') as $breadcrumb) {
+        $breadcrumbs .=  "\n\t\t\t\t<li class='bblbr-i'>$breadcrumb->title &gt;</li>";
+      }
+      $breadcrumbs .=  "\n\t\t\t\t<li class='bblbr-i'>$page->title</li>";
+      $breadcrumbs .= "</ul>";
+    }
+    
+    return $breadcrumbs . $form->render();
+  }
+
+  /**
+   * Handles change of the object field
+   * 
+   */
+  protected function executeFieldObject()
+  {
+    $input = wire('input');
+    $pages = wire('pages');
+    $languages = wire('languages');
+    
+    $subject = $pages->get($input->get->id);
+    $objectId = $input->get->object;
+    $language = $languages->get($input->get->language);
+
+    $out = array();
+    $out['action'] = 'fieldObject';
+    $out['follow'] = 'dependency';
+    $out['hiddenValue'] = '';
+    $out['inputfieldId'] = '';
+    $out['replace'] = array();
+
+    // If the objectId is 0 then the user trying to remove
+    // the object. See if the object is pointing back to our 
+    // subject as an object. If so provide user of removing that
+    // link too
+    if ($objectId == 0) {
+      $object = $subject->translation($language);
+      $objectObject = $object->translation($subject->language);
+      if ($subject->id === $objectObject->id) {
+        $out['hiddenValue'] = 'remove';
+        $out['inputfieldId'] = "wrap_Inputfield_babel_remove";
+        $out['replace'] = array(
+          'target_title' => $object->title,
+          );
+      }
+    }
+
+    // If the object already has a translation
+    // and it is not the $subject then provide user 
+    // an option to overwrite objects translation
+    $object = $pages->get($objectId);
+    $objectObject = $object->translation($subject->language);
+    if (!$objectObject instanceof NullPage && $subject->id !== $objectObject->id) {
+      $out['hiddenValue'] = 'overwrite';
+      $out['inputfieldId'] = 'wrap_Inputfield_babel_overwrite';
+      $out['replace'] = array(
+        'object' => $object->title,
+        'object_object' => $objectObject->title
+        );
+    }
+
+    if (!isset($out['hiddenValue'])) {
+      $out['dependency'] = 'blob';
+    }
+
+    return json_encode($out);
+  }
+
+  /**
+   * Prepares the header for module process
+   * page. This should be used only for regular (non ajax)
+   * page requests.
+   * 
+   * @return string.
+   */
+  protected function renderProcessHeader()
+  {
+    $out = "<div class='ProcessBabelTranslateTop'>";
+    $out .= "<h2 class='ProcessBabelTranslateTitle'>". $this->getModuleInfo()['title'] ."</h2>";
+    $out .= "<div class='ProcessBabelTranslateProgress ProcessPage'><i class='icon fa fa-fw fa-spinner fa-spin'></i></div>";
+    $out .= "</div>";
+    $out .= $this->renderProcessForm();
+    return $out;
+  }
+
+  /**
+   * Render process form
+   *
+   * @param string.
+   */
+  protected function renderProcessForm()
+  {
+    $languages = new PageArray();
+    $LanguageIds = $this->babel->include;
+    for ($i = 0; $i < count($LanguageIds); $i++) {
+      $language = wire('languages')->get($LanguageIds[$i]);
+      $languages->add($language);
+    }
+
+    $form = $this->modules->get('InputfieldForm');
+    $form->name = 'ProcessBabelTranslateHeader';
+    $form->attr('data-babel-batch-form', '1');
+
+    // Translated or untranslated
+    $field = $this->modules->get('InputfieldSelect');
+    $field->name = 'filter';
+    $field->label = __('Pages that are...');
+    $field->required = true;
+    foreach ($this->filterTypes as $type => $label) {
+      $field->addOption($type, $label);
+    }
+    $field->value = $this->filterType;
+    $field->columnWidth = 25;
+    $form->add($field);
+
+    // from language
+    $field = $this->modules->get('InputfieldSelect');
+    $field->name = 'from';
+    $field->label = __('From...');
+    foreach ($languages as $l) {
+      $field->addOption($l->id, $l->get('title|name'));
+    }
+    $field->value = $this->fromLanguage;
+    $field->columnWidth = 25;
+    $form->add($field);
+
+    // to language
+    $field = $this->modules->get('InputfieldSelect');
+    $field->name = 'to';
+    $field->label = __('To...');
+    foreach ($languages as $l) {
+      $field->addOption($l->id, $l->get('title|name'));
+    }
+    $field->value = $this->toLanguage;
+    $field->columnWidth = 25;
+    $form->add($field);
+
+    // limit
+    $field = $this->modules->get('InputfieldSelect');
+    $field->name = 'limit';
+    $field->label = __('Limit pages to...');
+    foreach ($this->pagesLimits as $limit) {
+      $field->addOption($limit);
+    }
+    $field->value = $this->pagesLimit;
+    $field->columnWidth = 25;
+    $form->add($field);
+
+    return $form->render();
+  }
+
+
+  /**
+   * Prepares the body for module process
+   * page. Should be used for both ajax and
+   * regular page requests.
+   * 
+   * @return string.
+   */
+  protected function renderProcessBody()
+  {  
+    $pagesMethod = 'get' . $this->filterType;
+    $pages = $this->babel->$pagesMethod($this->fromLanguage, $this->toLanguage, $this->pagesLimit, $this->pageNum);
+    return $this->renderProcessTable($pages);
+  }
+
+  /**
+   * Prepares the header for module process
+   * page. This should be used only for regular (non ajax)
+   * page requests.
+   * 
+   * @return string.
+   */
+  protected function renderProcessFooter()
+  {
+    $out = "<div class='ProcessBabelTranslateContent'>";
+    $out .= "<div class='ProcessBabelTranslateInfo'></div>";
+    $out .= "<div class='ProcessBabelTranslateBody'></div>";
+    $out .= "<div class='ProcessBabelTranslateInfo'></div>";
+    $out .= "</div>";
+    return $out;
+  }
+
+  /**
+   * Renders the pages into AdminDataTable
+   * 
+   * @param PageArray $pages The pages that will be rendered
+   * @return string
+   */
+  protected function renderProcessTable(PageArray $pages)
+  {
+    $table = $this->modules->get('MarkupAdminDataTable');
+    $table->setEncodeEntities(false);
+    $table->headerRow(array(__('Id'), __('Lang'), __('Title'), __('Path'), __('Template')));
+    foreach ($pages as $p) {
+      $table->row($this->prepareProcessTableRow($p));
+    }
+    return $table->render();
+  }
+
+  /**
+   * Prepares an array for MarkupAdminDataTable
+   * 
+   * @param Page $page The page that will be prpared
+   * @return Array
+   */
+  protected function prepareProcessTableRow(Page $page)
+  {
+    $out = array();
+
+    // add id
+    $out[] = $page->id;
+
+    // add language
+    $language = $page->language;
+    $out[] = ($language && $language instanceof Language) ? $language->get('title|name') : 'not available';
+
+    // Add title
+    $title = $page->get('title|name');
+    $url = $this->pageTranslateUrl($page);
+    $out[] = "<a class='PageListActionBabel' href='$url'>$title</a>";
+
+    // add path
+    $out[] = $page->path;
+
+    // add template
+    $out[] = $page->template->name;
+    return $out;
+  }
+
+  /**
+   * Render pager
+   * 
+   * @param int $current
+   * @param int $total
+   * @param 
+   * 
+   */
+  protected function renderInfo()
+  {
+    $path = $this->config->paths->wire . 'modules/Markup/MarkupPagerNav/PagerNav.php';
+    include("$path");
+    $totalMethod = 'get' . $this->filterType . 'Total';
+    $total = $this->babel->$totalMethod($this->fromLanguage, $this->toLanguage);
+    $pager = new PagerNav($total, $this->pagesLimit, $this->pageNum);
+    $pager->setLabels('<i class="fa fa-angle-left"></i>', '<i class="fa fa-angle-right"></i>');
+
+    $start = $this->pagesLimit * ($this->pageNum - 1);
+    $end = $this->pagesLimit * $this->pageNum;
+    if ($end > $total) $end = $total;
+    $title = "<h2 class='ProcessBabelTranslateInfoTitle'>". sprintf(__('%1$s to %2$s of %3$s'), $start, $end, $total) ."</h2>";
+
+    $pagination = "<ul class='MarkupPagerNav ProcessBabelTranslatePagination'>";
+    foreach($pager as $item) {
+      $pageLabel = $item->label;
+      $pageUrl = $this->pagePath . "?page=$item->pageNum";
+      $pageUrl .= "&filter=$this->filterType";
+      $pageUrl .= "&from=$this->fromLanguage";
+      $pageUrl .= "&to=$this->toLanguage";
+      $pageUrl .= "&limit=$this->pagesLimit";
+      $classes = array();
+      switch ($item->type) {
+        
+        case PagerNavItem::typeCurrent:
+        $classes[] = 'MarkupPagerNavOn';
+        break;
+
+        case PagerNavItem::typeFirst:
+        $classes[] = 'MarkupPagerNavFirst';
+        break;
+
+        case PagerNavItem::typePrevious:
+        $classes[] = 'MarkupPagerNavPrevious';
+        break;
+
+        case PagerNavItem::typeNext:
+        $classes[] = 'MarkupPagerNavNext';
+        break;
+
+        case PagerNavItem::typeLast:
+        $classes[] = 'MarkupPagerNavLast';
+        break;
+
+        case PagerNavItem::typeSeparator:
+        $classes[] = 'MarkupPagerNavSeparator';
+        $pageLabel = '...';
+        break;
+
+        default:
+          # code...
+          break;
+      }
+      $classes = implode(' ', $classes);
+      if ($item->type === PagerNavItem::typeSeparator) {
+        $pagination .= "<li class='$classes'><span class='detail'>$pageLabel</span></li>";  
+      } else {
+        $pagination .= "<li class='$classes'><a class='ProcessBabelPageLink' href='$pageUrl'>$pageLabel</a></li>";  
+      }
+      
+    }
+    $pagination .= "</ul>";
+    return $title . $pagination;
+  }
+
+  /**
+   * Hook method that adds a Translation Tab for all pages that are managed by 
+   * Babel. 
+   */
+  protected function hookLanguageTab($event)
+  {
+    // Find out what page we are editing
+    $id = (int) $this->input->post('id');
+    if(!$id) $id = (int) $this->input->get('id');
+    $page = wire('pages')->get("id=$id");
+
+    // If page is not translatable by Babel then return
+    if (!$this->babel->translatable($page)) return;
+
+    $form = $event->arguments[0];
+    $processPageEdit = $event->object;
+    $translationTab = $this->buildTranslateTab($page);
+    $processPageEdit->addTab($translationTab->attr('id'), $translationTab->attr('title'));
+    $form->insertBefore($translationTab, $form->get('submit_save'));
+    $event->return = $form;
+  }
+
+  /**
+   * Hook method. Adds a `Translate` action button.
+   * 
+   */
+  protected function hookActionButtons($event)
+  {
+    $value = $event->return;
+    $page = $event->arguments(0);
+    if (!$this->babel->translatable($page)) return;
+    
+    $value[] = array(
+      'cn' => 'Babel',
+      'name' => $this->i18n['translate'],
+      'url' => $this->pageTranslateUrl($page)
+      );
+
+    $event->return = $value;
+  }
+
+  /**
+   * Returns a Babel translate url for page
+   * @param Page $page The page that you want to translate
+   * @return string
+   */
+  protected function pageTranslateUrl(Page $page)
+  {
+    return $this->pagePath . "?action=translate&id=$page->id";
+  }
+
+  /**
+   * Hook method. Adds links to the PageListLabel.
+   * 
+   * 
+   * 
+   */
+  protected function hookPageLabel($event)
+  {
+    $label = $event->return;
+    $page = $event->arguments(0);
+    $links = $page->translations();
+    if (!$links->count()) return;
+    $label .= "<span class='bbl-links-indicator'>(";
+    foreach ($links as $p) {
+      $lang_name = $p->language->name;
+      $label .= "$lang_name+";
+      if ($links->getNext($p) !== null) $label .= " ";
+    }
+    $label .= ")</span>";
+    $event->return = $label;
+  }
+
+  /**
+   * Builds a proper Translation Tab for a given Page. Should be able 
+   * to use it for quick action button translation too.
+   *
+   * @param $subject Page object. The Page for which the TranslationTab for.
+   */
+  protected function buildTranslateTab(Page $subject)
+  {
+    $modules = wire('modules');
+    $languages = wire('languages');
+    $wrapper = new InputfieldWrapper();
+    $id = $this->className();
+    $wrapper->attr('id', $id);
+    $title = $this->_('Translate'); // Tab Label: Translate
+    $wrapper->attr('title', $title); 
+    $wrapper->attr('data-babel-translate-form', '1');
+
+    foreach ($this->babel->include as $l) {
+      $l = $languages->get($l);
+      if ($subject->language === $l) continue;
+      $value = $subject->translation($l);
+
+      // Open a fieldSet
+      $fieldset = $modules->get('InputfieldFieldset');
+      $fieldset->name = "babel_$l->name";
+      $fieldset->label = $l->title;
+      $fieldset->collapsed = Inputfield::collapsedNo;
+
+      // Create new page or choose existing
+      $field = $modules->get('InputfieldRadios');
+      $field->name = "babel_type_$l->name";
+      $field->label = __('Translate by...');
+      //$field->required = true;
+      $field->addOptions(array(
+        'existing' => __('Choosing existing page'),
+        'new' => __('Creating new one')
+        ));
+      if (!$value instanceof NullPage) $field->value = 'existing';
+      $fieldset->add($field);
+      
+      // A language link
+      require_once('InputfieldPageListSelectBabel.php');
+      $field = new InputfieldPageListSelectBabel();
+
+      $translatedParent = $subject->closestParentTranslation($l);
+
+      // If the $subject is Root page then let user
+      // choose target out of context
+      if ($subject->is($this->babel->getRoot($subject->language)->path) && !$subject->parent instanceof NullPage) {
+        $field->parent_id = $subject->parent->id;
+      } else {
+        $field->parent_id = $this->babel->getRoot($l)->id;
+      }
+      
+      $field->name = "babel_object_$l->name";
+      $field->attr('value', $value);
+      $field->label = __("Target");
+      $field->showIf = "babel_type_$l->name=existing";
+      if ($translatedParent instanceof Page) {
+        $field->attr('open-ids', (string) $translatedParent->parents("id!=$field->parent_id")->append($translatedParent));
+      }
+      $fieldset->add($field);
+
+      // The field is there to control the visibility of
+      // available options when changing the object value
+      $field = $this->modules->get('InputfieldHidden');
+      $field->name = "babel_hidden_$l->name";
+      $field->attr('value', 'blob');
+      $fieldset->add($field);
+
+      // If Babel should Overwrite target's language link
+      // to point it to this Page
+      $field = $this->modules->get('InputfieldCheckbox');
+      $field->label = __('Overwrite');
+      $field->description = sprintf(__('The %1$s is pointing to %2$s as a %3$s translation. Do you wish to overwrite that link and point it back to this page as a %3$s translation?'), "{{object}}", "{{object_object}}", $subject->language->title);
+      $field->name = "babel_overwrite_$l->name";
+      $field->showIf = "babel_type_$l->name=existing, babel_hidden_$l->name=overwrite";
+      $fieldset->add($field);
+
+      // If Babel should Remove target's language link
+      // that points to this page if user is removing 
+      // the current language link
+      $field = $modules->get('InputfieldCheckbox');
+      $field->label = __('Remove');
+      $field->description = sprintf(__('The %1$s is pointing back to this page. Would you like to remove that link too?'), "{{target_title}}");
+      $field->name = "babel_remove_$l->name";
+      $field->showIf = "babel_type_$l->name=existing, babel_hidden_$l->name=remove";
+      $fieldset->add($field);
+
+      // Choose parent for new page
+      $field = $modules->get('InputfieldPage');
+      $field->inputfield = 'InputfieldPageListSelect';
+      $field->parent_id = $this->babel->getRoot($l)->id;
+      $field->name = "babel_parent_$l->name";
+      $field->label = __('Parent Page');
+      $field->description = __('Choose the parent for the new page');
+      $field->showIf = "babel_type_$l->name=new";
+      $field->required = true;
+      $field->requiredIf = $field->showIf;
+      $field->value = $translatedParent;
+      $fieldset->add($field);
+
+      // Choose name for new page
+      $field = $modules->get('InputfieldName');
+      $field->name = "babel_name_$l->name";
+      $field->label = __('Page Name');
+      $field->description = __('Choose a name for your new page.');
+      $field->attr('data-note',  $this->_('The name entered is already in use. If you do not modify it, the name will be made unique automatically after you save.'));
+
+      $field->showIf = "babel_type_$l->name=new";
+      $field->required = true;
+      $field->requiredIf = $field->showIf;
+      $name = $subject->name;
+      if ($translatedParent->children("name=$name, include=all")->count()) {
+        $name  .= "-$l->name";
+      }
+      if ($translatedParent->children("name=$name, include=all")->count()) {
+        $name .= "---" . date('d-m-Y--H-i-s');
+      }
+      $field->value = $name;
+      $fieldset->add($field);
+
+      $wrapper->add($fieldset);
+    }
+    return $wrapper;
+  }
+
+  /**
+   * Updates the Babel links
+   */
+  protected function updateLinks(Page $page)
+  {
+    $pages = wire('pages');
+    $input = wire('input');
+    $languages = wire('languages');
+
+    foreach ($this->babel->include as $l) {
+      $l = $languages->get($l);
+
+      // If page's language is $l
+      // then skip
+      if ($page->language === $l) continue;
+
+      // Get the input data
+      $object = $input->post("babel_object_$l->name");
+      $overwrite_object = $input->post("babel_overwrite_$l->name");
+      $remove_object = $input->post("babel_remove_$l->name");
+      $type = $input->post("babel_type_$l->name");
+      
+      // If user is trying to create a new page
+      // then make neccessary modifications 
+      if ($type === 'new') {
+        $overwrite_object = true;
+        $remove_object = true;
+        $parent = $input->post("babel_parent_$l->name");
+        $name = $input->post("babel_name_$l->name");
+
+        // check if the parent is valid
+        $parent = $pages->get("id=$parent");
+        if ($parent instanceof NullPage || !$parent->language || $parent->language->id !== $l->id) {
+          $this->error('Parent is not valid!');
+          return;
+        }
+
+        // check if the name is unique
+        // if not make it unique
+        if ($parent->children("name=$name, include=all")->count()) {
+          $name .= "-" . date('d-m-Y--H-i-s');
+        }
+
+        $object = new Page();
+        $object->of(false);
+        $object->template = $page->template;
+        $object->parent = $parent;
+        $object->name = $name;
+        $object->title = $name;
+        $this->copyPage($page, $object);
+        $object->save();
+        $object = $object->id;
+      }
+
+      // If the value is empty or cannot be finded
+      // remove translation $l for $page
+      if (!$object || $pages->get($object) instanceof NullPage) {
+        
+        // Check if we actually have that link in babel_links table
+        $object = $page->translation($l);
+        if (!$object instanceof NullPage) {
+
+          // Try to remove the link and send message to the user 
+          // about the status of the removal
+          $i18n_str = $page->removeTranslation($l, $remove_object) ? 'success' : 'failure';
+          $this->message(sprintf($this->i18n["remove_$i18n_str"], $page->title, $object->language->title, $object->title));
+        } else {
+          continue;
+        }
+
+      // Create the link
+      } else {
+        $object = $pages->get("id=$object");
+        $i18n_str = $page->addTranslation($object, $overwrite_object) ? 'success' : 'failure';
+        if ($type === 'new') {
+          $i18n_str = "create_$i18n_str";
+        } else {
+          $i18n_str = "add_$i18n_str";
+        }
+        $this->message(sprintf($this->i18n[$i18n_str], $page->title, $object->language->title, $object->title));
+      }
+    }
+  }
+
+  /**
+   * Copies all fields from first page into second.
+   * 
+   * @param Page $from The page from which the fields will 
+   *        be populated
+   * @param Page $to The page into which the fields will
+   *         be populated
+   * @return undefined;
+   * @throws WireException
+   */ 
+  protected function copyPage(Page $from, Page $to)
+  {
+    if ($from->template->id !== $to->template->id) throw new WireException("Provided pages for copy should have the same template.");
+
+    $verboseTypes = array(
+      'FieldtypeFile',
+      'FieldtypeImage',
+      'FieldtypeRepeater',
+      'FieldtypeComments',
+      'FieldtypeCache',
+      'FieldtypeFieldsetClose',
+      'FieldtypeFieldsetOpen',
+      'FieldtypeFieldsetTabOpen',
+      'FieldtypePageTable'
+      );
+
+    $toLanguage = $to->language;
+
+    foreach ($from->fields as $field) {
+      if (in_array($field->type, $verboseTypes)) continue;
+      $name = $field->name;
+      if ($field->type == 'FieldtypePage') {
+        if ($field->derefAsPage == FieldtypePage::derefAsPageArray) {
+          foreach ($from->$name as $page) {
+            $translation = $page->translation($toLanguage);
+            if ($translation && $translation instanceof Page) $to->$name->add($translation);
+          }
+        } else if ($from->$name instanceof Page){
+          $translation = $from->$name->translation($toLanguage);
+          if ($translation && $translation instanceof Page);
+          $to->$name = $translation;
+        }
+      } else {
+        $to->$name = $from->$name;  
+      }
+    }
+  }
+
+  /**
+   * Hook method for updateLinks
+   * Does nothing but proxying updateLinks
+   * method to be callable with HookEvent argument
+   *
+   */
+  protected function hookUpdateLinks($event)
+  {
+    // Do nothing if we are not dealing with
+    // page edit or babel translate
+    $input = wire('input');
+    if (!$input->post->submit_save && !$input->post->submit_babel_translate) return;
+
+    return $this->updateLinks($event->arguments(0));
+  }
+
+  /**
+   * Overwrites the wire('breadcrumbs');
+   * @param Page $page. The page for which the 
+   *        breadcrumbs for.
+   */
+  protected function setupBreadcrumbs($page)
+  {
+    wire('breadcrumbs')->removeAll();
+    $parents = $page->parents();
+    $parents->shift();
+    foreach ($parents as $b) {      
+      $crumb = new Breadcrumb();
+      $crumb->set('url', $this->config->urls->admin . "page/?open=$b->id");
+      $crumb->set('title', $b->get('title|name'));
+      wire('breadcrumbs')->add($crumb);
+    }
+    $this->addHookProperty('Page::title', $this, 'getNameIfNoTitle');
+  }
+
+  /**
+   * Returns name if title does not exist.
+   * This is for solving breadcrumbs problem on
+   * translate action via modal
+   * @return string
+   */
+  protected function getNameIfNoTitle(HookEvent $event)
+  {
+    if(!$event->return) $event->return = $event->object->name;
+  }
+
+  /**
+   * Returns configuration fields for Babel 
+   */
+  static public function getModuleConfigInputfields(array $data)
+  {
+    $data = array_merge(self::getDefaultData(), $data);
+    $modules = wire('modules');
+    $form = new InputfieldWrapper();
+
+    $field = $modules->get("InputfieldCheckbox");
+    $field->attr('name', 'translateButton');
+    $field->attr('checked', $data['translateButton']);
+    $field->label = __("Translate Action Button");
+    $field->description = __('Wheather you want to have a `translate` action button for each page on PageList.');
+    $field->columnWidth = 50;
+    $form->add($field);
+
+    $field = $modules->get("InputfieldCheckbox");
+    $field->attr('name', 'translateTab');
+    $field->attr('checked', $data['translateTab']);
+    $field->label = __("Translate Tab");
+    $field->description = __('Wheather you want to have a `Translate` tab for each page on PageEdit.');
+    $field->columnWidth = 50;
+    $form->add($field);
+
+    $field = $modules->get("InputfieldCheckbox");
+    $field->attr('name', 'translateLinks');
+    $field->attr('checked', $data['translateLinks']);
+    $field->label = __("PageList links indicator");
+    $field->description = __('Wheather you want to have links indicator of the translations on the admin Page List Tree. A little visual cue that states if pages has a translations assigned and which ones.');
+    $field->columnWidth = 50;
+    $form->add($field);
+
+    return $form;
+  }
+  
 }

@@ -13,760 +13,760 @@ require_once("DatabaseQuerySelectBabel.php");
 
 class Babel extends WireData implements Module, ConfigurableModule {
 
-	const table = 'babel_links';
-
-	protected $totalTranslated = array();
-	protected $totalUntranslated = array();
-
-	/**
-	 * getModuleInfo is a module required by all modules to tell ProcessWire about them
-	 *
-	 * @return array
-	 *
-	 */
-	public static function getModuleInfo() {
-
-		return array(
-			'title' => 'Babel', 
-			'version' => '0011', 
-			'summary' => _('Provides functionality for section based multilingual sites on ProcessWire.'),
-			'href' => 'http://bushluk.com',
-			'singular' => true,
-			'autoload' => true, 
-			'icon' => 'language',
-			'requires' => array('LanguageSupport')
-			);
-	}
-
-	public function __construct()
-	{
-		parent::__construct();
-		$this->pdo = wire('database');
-	}
-
-	static public function getDefaultData() {
-		$defaults = array(
-			'include' => array()
-		);
-		foreach (wire('languages') as $l) $defaults['root_' . $l->name] = '';
-		return $defaults;
-	}
-
-	public function init()
-	{
-		$this->addHookProperty('Page::language', $this, 'pageLanguage');
-		$this->addHook('Page::translation', $this, 'pageTranslation');
-		$this->addHook('Page::translations', $this, 'pageTranslations');
-		$this->addHook('Page::addTranslation', $this, 'pageAddTranslation');
-		$this->addHook('Page::removeTranslation', $this, 'pageRemoveTranslation');
-		$this->addHook('Page::closestParentTranslation', $this, 'pageClosestParentTranslation');
-		$this->addHookBefore('Pages::deleteReady', $this, 'cleanTranslations');
-		$this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
-		$this->addHookBefore('Pages::saveReady', $this, 'fixConflicts');
-		$this->addHookAfter('Languages::deleted', $this, 'cleanLanguage');
-	}
-
-	/**
-	 * Given a Subject and a Language returns an Object.
-	 * 
-	 * @param Page $subject. The subject which you want an object for.
-	 * @param Language $language. The language of the object.
-	 * @return Page if available, NullPage otherwise.
-	 */
-	protected function getObject(Page $subject, Language $language)
-	{
-		$table = self::table;
-		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id AND language_id=:language_id");
-		$stmt->execute(array(
-			'subject_id' => $subject->id,
-			'language_id' => $language->id
-			));
-		if (!$stmt->rowCount()) return new NullPage();
-		$object = $stmt->fetchAll(PDO::FETCH_OBJ)[0]->object_id;
-		return wire('pages')->get("id=$object");
-	}
-
-	/**
-	 * Given an Object and a Language returns a Subject.
-	 * 
-	 * @param Page $object. The object which you want a subject for.
-	 * @param Language $language. The language of the object.
-	 * @return Page if available, NullPage otherwise.
-	 */
-	protected function getSubject(Page $object, Language $language)
-	{
-		$table = self::table;
-		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id AND language_id=:language_id");
-		$stmt->execute(array(
-			'object_id' => $object->id,
-			'language_id' => $language->id
-			));
-		if (!$stmt->rowCount()) return new NullPage();
-		$subject = $stmt->fetchAll(PDO::FETCH_OBJ)[0]->subject_id;
-		return wire('pages')->get("id=$subject");
-	}
-
-	/**
-	 * Returns all objects for the given subject.
-	 * 
-	 * @param $subject Page object.
-	 * @return PageArray.
-	 */
-	protected function getObjects(Page $subject)
-	{
-		$pages = wire('pages');
-		$objects = new PageArray();
-		$table = self::table;
-		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id");
-		$stmt->execute(array('subject_id' => $subject->id));
-		if (!$stmt->rowCount()) return $objects;
-		while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
-			$objects->append($pages->get("id=$row->object_id"));
-		}
-		return $objects;
-	}
-
-	/**
-	 * Returns all subjects for the given object.
-	 * 
-	 * @param $object Page object.
-	 * @return PageArray.
-	 */
-	protected function getSubjects(Page $object)
-	{
-		$pages = wire('pages');
-		$subjects = new PageArray();
-		$table = self::table;
-		$stmt = $this->pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id");
-		$stmt->execute(array('object_id' => $object->id));
-		if (!$stmt->rowCount()) return $subjects;
-		while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
-			$subjects->append($pages->get("id=$row->subject_id"));
-		}
-		return $subjects;
-	}
-
-	/**
-	 * Returns the pages that are managed by Babel but does not have 
-	 * a translation from one language to another.
-	 * 
-	 * @param Language $fromLanguage A language of the pages.
-	 * @param Language $toLanguage A language to which the 
-	 *				pages do not have translation for.
-	 * @param int $limit. Use to max limit the amount of pages in return PageArray
-	 * @param int $page. Use for pagination of the returned PageArray.
-	 * @return PageArray
-	 * @throws WireException 
-	 */
-	public function getUntranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
-	{
-		$languages = wire('languages');
-		$pagesTable = 'pages';
-		$parentsTable = 'pages_parents';
-		$babelTable = self::table;
-
-		// populate languages
-		if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
-		if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);		
-
-		$query = new DatabaseQuerySelectBabel();
-		$query->select('SQL_CALC_FOUND_ROWS');
-		$query->limit($limit);
-		$query->offset($limit * ($page - 1));
-		$query->select('id')->from($pagesTable)->leftjoin($babelTable);
-		$query->on("$pagesTable.id = subject_id");
-
-		// if fromLanguage is given
-		if ($fromLanguage instanceof Language) {
-			$query->where($this->getQueryParents(array($fromLanguage)));
-		} else {
-			$langs = array();
-			foreach ($this->include as $l) {
-				if ($toLanguage instanceof Language && $l == $toLanguage->id) continue;
-				$langs[] = $languages->get($l);
-			}
-			$query->where($this->getQueryParents($langs));
-		}
-
-		// if toLanguage is given
-		if ($toLanguage instanceof Language) {
-			$query->on("$babelTable.language_id = $toLanguage->id");
-		}
-
-		$query->where("$babelTable.subject_id IS NULL");
-
-		$stmt = $this->pdo->prepare($query->getQuery());
-		$stmt->execute();
-		$ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
-		$total = $this->pdo->prepare("SELECT FOUND_ROWS()");
-		$total->execute();
-		$this->totalUntranslated[$this->getTotalKey($fromLanguage, $toLanguage)] = $total->fetch()[0];
-		return $this->pages->getById($ids);
-	}
-
-	/**
-	 * Returns the pages that have a translation from one language to 
-	 * another.
-	 * @param Language $fromLanguage The language of the pages
-	 * @param Language $toLanguage The language to which the pages
-	 * 				were translated to.
-	 * @param int $limit. Use to max limit the amount of pages in return PageArray
-	 * @param int $page. Use for pagination of the returned PageArray.
-	 * @return PageArray
-	 * @throws WireException
-	 */
-	public function getTranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
-	{
-		$pagesTable = 'pages';
-		$parentsTable = 'pages_parents';
-		$babelTable = self::table;
-		$languages = wire('languages');
-		
-		// populate languages
-		if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
-		if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);
-
-		$query = new DatabaseQuerySelectBabel();
-		$query->select('SQL_CALC_FOUND_ROWS');
-		$query->limit($limit);
-		$query->offset($limit * ($page - 1));
-
-		// if no languages are given
-		// select all pages that have been translated to 
-		if ($fromLanguage === null && $toLanguage === null) {
-			$query->select('subject_id')->from($babelTable);
-
-		// if either one is given
-		} else {
-			$query->select('id')->from($pagesTable)->join($babelTable);
-			$query->on("$pagesTable.id = $babelTable.subject_id");
-
-			// toLanguage is given
-			if ($toLanguage instanceof Language) $query->on("$babelTable.language_id = $toLanguage->id");
-
-			// fromLanguage is given
-			if ($fromLanguage instanceof Language) {
-				$query->where($this->getQueryParents(array($fromLanguage)));
-			} else {
-				$langs = array();
-				foreach ($this->include as $l) {
-					if ($toLanguage instanceof Language && $l == $toLanguage->id) continue;
-					$language = $languages->get($l);
-					$langs[] = $language;
-				}
-				$query->where($this->getQueryParents($langs));
-			}
-		}
-
-		$stmt = $this->pdo->prepare($query->getQuery());
-		$stmt->execute();
-		$ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
-		$total = $this->pdo->prepare("SELECT FOUND_ROWS()");
-		$total->execute();
-		$totalKey = $this->getTotalKey($fromLanguage, $toLanguage);
-		$this->totalTranslated[$totalKey] = $total->fetch()[0];
-		return $this->pages->getById($ids);
-	}
-
-	protected function getQueryParents(array $languages)
-	{
-		if (!count($languages)) return '';
-		$pagesTable = 'pages';
-		$parentsTable = 'pages_parents';
-		$language = array_shift($languages);
-		$parent = $this->getRoot($language);
-		$where = "parents_id = $parent->id OR pages_id = $parent->id";
-		foreach ($languages as $language) {
-			$parent = $this->getRoot($language);
-			$where .= " OR parents_id = $parent->id OR pages_id = $parent->id";	
-		}
-		
-		$parents = new DatabaseQuerySelectBabel();
-		$parents->select('pages_id')->from($parentsTable)->where($where);
-		$parents = $parents->getQuery();
-		return "$pagesTable.parent_id IN ($parents)";
-	}
-
-	/**
-	 * Return the total untranslated pages fro one language to another.
-	 * Used for pagination.
-	 * @param Language $fromLanguage
-	 * @param Language $toLanguage
-	 * @return int
-	 */
-	public function getUntranslatedTotal($fromLanguage = null, $toLanguage = null)
-	{
-		return $this->totalUntranslated[$this->getTotalKey($fromLanguage, $toLanguage)];
-	}
-
-
-	/**
-	 * Return the total translated pages fro one language to another.
-	 * Used for pagination.
-	 * @param Language $fromLanguage
-	 * @param Language $toLanguage
-	 * @return int
-	 */
-	public function getTranslatedTotal($fromLanguage = null, $toLanguage = null)
-	{
-		return $this->totalTranslated[$this->getTotalKey($fromLanguage, $toLanguage)];
-	}
-
-	/**
-	 *
-	 *
-	 *
-	 */
-	protected function getTotalKey($fromLanguage = null, $toLanguage = null)
-	{
-		$key = "";
-		if ($fromLanguage instanceof Language) {
-			$key .= $fromLanguage->name;
-		}
-
-		if ($toLanguage instanceof Language) {
-			$key .= "->" . $toLanguage->name;
-		} else {
-			$key .= "->";
-		}
-
-		return $key;
-	}
-
-	/**
-	 * Returns a Language object for given page
-	 * The Language is determined based on root Language page
-	 * that could be configured via module settings.
-	 * 
-	 * @param $object Page object.
-	 * @throws WireException 	 * Throws error if the Page is not a decsendent of any root Language pages
-	 * @return Language object.
-	 */
-	protected function getLanguage(Page $object)
-	{
-		$languages = wire('languages');
-		foreach ($this->include as $l) {
-			$l = $languages->get($l);
-			$root = $this->getRoot($l);
-			if ($object->is("has_parent=$root") || $object->is($root->path)) return $l;
-		}
-		throw new WireException("The page: `$object->id` is not managed by Babel");
-	}
-
-	/**
-	 * If the given page is managed by Babel? Can it be translated?
-	 * 
-	 * @param $page Page object.
-	 * @return boolean
-	 */
-	public function translatable(Page $page)
-	{
-		try{
-			$language = $this->getLanguage($page);
-		} catch (WireException $e) {
-			return false;
-		}
-		return $language instanceof Language;
-	}
-
-	/**
-	 * Hook property for all pages that is managed by Babel.
-	 * Returns a language for a given page
-	 * @param $event Hook Event.
-	 * @return Replaces a return value if $page is managed by Babel.
-	 */ 
-	protected function pageLanguage(HookEvent $event)
-	{
-		try {
-			$language = $this->getLanguage($event->object);
-		} catch (WireException $e) {
-			return;
-		}
-		$event->return = $language;
-	}
-
-	/**
-	 * Returns a root Language page for given Language
-	 * 
-	 * @param $language Language object. The language of the root Language
-	 * @throws WireException Throws error if the Language is not managed by Babel.
-	 * @return Page object.
-	 */
-	public function getRoot(Language $language)
-	{
-		if (!in_array($language->id, $this->include)) throw new WireException("The language $language->title is not managed by Babel.");
-		$root = "root_" . $language->name;
-		$id = $this->$root;
-		return wire('pages')->get($id);
-	}
-
-	/**
-	 * Creates a link from $subject to $object.
-	 * The $language of the link is determined by $object->language. 
-	 * Throws error if the language of $object and $subject match.
-	 *
-	 * @param $subject Page object. The Page from which the link points.
-	 * @param $object Page object. The Page to which the link points.
-	 * @throws WireException
-	 * @return boolean
-	 */
-	protected function addLink(Page $subject, Page $object)
-	{
-		// Subject and Object can not be in the same language
-		// section
-		if ($subject->language === $object->language) throw new WireException('The language for both $subject and $object cannot be the same.');
-
-		// A Page can have only one link per one language
-		// If $subject already have a link for $object->language
-		// remove it first
-		$oldObject = $this->getObject($subject, $object->language);
-		if (!$oldObject instanceof NullPage) {
-			$this->removeLink($subject, $oldObject);
-		}
-
-		// Update db
-		$table = self::table;
-		try {
-			$stmt = $this->pdo->prepare("INSERT INTO $table(subject_id, language_id, object_id) VALUES(:subject_id, :language_id, :object_id)");
-
-			// Add link from subject to object
-			$stmt->execute(array(
-				'subject_id' => $subject->id,
-				'language_id' => $object->language->id,
-				'object_id' => $object->id
-				));
-
-			$result = (boolean) $stmt->rowCount();
-		} catch (PDOException $e) {
-			$result = false;
-		}
-		return $result;
-	}
-
-	/**
-	 * Removes a link from $subject to $object
-	 * 
-	 * @param $subject Page object. The Page from which the link points.
-	 * @param $object Page object. The Page to which the link points.
-	 * @return boolean True if link succesfully removed. False otherwise.
-	 */
-	protected function removeLink(Page $subject, Page $object)
-	{		
-		$table = self::table;
-		try {
-			$stmt = $this->pdo->prepare("DELETE FROM $table WHERE subject_id=:subject_id AND object_id=:object_id");
-
-			// Remove link from subject to object
-			$stmt->execute(array(
-				'subject_id' => $subject->id,
-				'object_id' => $object->id
-				));
-
-			$result = (boolean) $stmt->rowCount();
-		} catch (PDOException $e) {
-			$result = false;
-		}
-		return $result;
-	}
-
-	/**
-	 * Given a language id, name, instance returns a Language object
-	 * if the language can be found and is valid
-	 * @param int|str|Language $language A language that should be sanitized
-	 * @throws WireEception
-	 * @return Language A language object
-	 */
-	protected function sanitizeLanguage($language)
-	{
-		// If $language is not a Language object
-		// Try to get language by name or id
-		if (!$language instanceof Language) $language = $this->wire('languages')->get($language);
-		if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
-		if (!in_array($language->id, $this->include)) throw new WireException("Language $language->name is not handled by Babel");
-		return $language;
-	}
-
-	/**
-	 * Returns a translation for page for given language
-	 * or NullPage if there isn't one.
-	 * 
-	 * @param 	string|int|Language The language of the translation.
-	 * 					if string assumes that it is a Language name
-	 * 					if integer assumes that it is an id of the Language
-	 *        	also can be Language object itself
-	 * @throws  WireException If the language is not found or is not 
-	 *					handled by Babel
-	 * @return 	Page|NullPage Page if available and NullPage if not.
-	 */
-	protected function pageTranslation(HookEvent $event)
-	{
-		$page = $event->object;
-		$language = $this->sanitizeLanguage($event->arguments(0));
-		$event->return = $this->getObject($page, $language);
-	}
-
-	/**
-	 * Returns the translation of the closests translatable parent of the page.
-	 * 
-	 * @param Language|int|string $language The language to which you want a translation
-	 * @throws WireException
-	 * @return Page The translations of the closest translatable parent
-	 */
-	protected function pageClosestParentTranslation(HookEvent $event)
-	{
-		$page = $event->object;
-		$language = $this->sanitizeLanguage($event->arguments[0]);
-		$pages = $page->parents()->reverse();
-			foreach ($pages as $p) {
-				$translation = $p->translation($language);
-				if (!$translation instanceof NullPage) return $event->return = $translation;
-			}
-		$event->return = $this->getRoot($language);
-	}
-
-
-	/**
-	 * Returns all translations for page
-	 * or NullPage if there is any.
-	 * 
-	 */
-	protected function pageTranslations(HookEvent $event)
-	{
-		$event->return = $this->getObjects($event->object);
-	}
-
-	/**
-	 * Translates $page. Adds a Babel link to given target.
-	 * If the target page has no link that points to the 
-	 * $pags's language then the reverse link will be created automatically.
-	 * 
-	 * @param Page $target. A page that you want to link to.
-	 * @param boolean $overwrite/$remove If the target page already have a
-	 *				translation from the $page's section should Babel
-	 *				overwrite that link to point it back to $page instaed
-	 * @return boolean If the translation is successfull or not.
-	 */
-	protected function pageAddTranslation(HookEvent $event)
-	{
-		$subject = $event->object;
-		$target = $event->arguments(0);
-		$overwrite = $event->arguments(1);
-		$success = false;
-
-		// $target is not a Page and cannot get us a Page
-		// then throw an error
-		if ($target instanceof Page) $object = $target;
-		else $object = wire('pages')->get($target);
-		if (!$object instanceof Page) throw new WireException("Unknown Page `$target`.");
-
-		// Assuming $overwrite is not given
-		// If the target has no translation link for 
-		// $page's language then add it automatically
-		if (is_null($overwrite)) $overwrite = $this->getObject($object, $subject->language) instanceof NullPage;
-
-		// Add a link
-		$success = $this->addLink($subject, $object);
-
-		// If the $overwrite is true then
-		// overwrite a reverse link also
-		if ($overwrite) $success = $this->addLink($object, $subject);
-
-		$event->return = $success;
-	}
-
-	/**
-	 * Removes a translation from the page.
-	 * @param string|int|Language What language link
-	 *				you wish to remove
-	 * @param boolean $remove If the translation
-	 * 				is pointing back to this page should Babel
-	 * 				remove that link too.
-	 * @throws WireException
-	 * @return boolean. If the removal is successful or not.
-	 */
-	protected function pageRemoveTranslation(HookEvent $event)
-	{
-		$subject = $event->object;
-		$language = $event->arguments(0);
-		$remove = (boolean) $event->arguments(1);
-		$success = false;
-
-		if (!$language instanceof Language) $language = wire('languages')->get($language);
-		if (!$language instanceof Language) throw new WireException("Unknown Language `$language`.");
-
-		$object = $this->getObject($subject, $language);
-	
-		if ($object instanceof NullPage) {
-			$success = false;
-		} else {
-			// Remove the link
-			$success = $this->removeLink($subject, $object);
-
-			// Remove reverse link if asked and if there is one
-			if ($remove) $success = $this->removeLink($object, $subject);
-		}
-
-		$event->return = $success;
-	}
-
-	/**
-	 * Cleans all the translation connections to
-	 * and from the page.
-	 * @param Page $page. The Page that you want to clean after.
-	 * @return boolean. If successfully cleaned or not.
-	 */
-	protected function cleanTranslations(HookEvent $event)
-	{
-		$page = $event->arguments(0);
-		$success = true;
-		foreach($this->getSubjects($page) as $subject) {
-			if (!$this->removeLink($subject, $page)) {
-				$success = false;
-				$this->message(sprintf(__('Couldn\'t remove translation link between %1$s and %2$s'), $page->title, $subject->title));
-			} else {
-				$this->message(sprintf(__('Removed translation link between %1$s and %2$s'), $page->title, $subject->title));
-			}
-		}
-
-		foreach($this->getObjects($page) as $object) {
-			if (!$this->removeLink($page, $object)) {
-				$success = false;
-				$this->message(sprintf(__('Couldn\'t remove translation link between %1$s and %2$s'), $page->title, $object->title));
-			} else {
-				$this->message(sprintf(__('Removed translation link between %1$s and %2$s'), $page->title, $object->title));
-			}
-		}
-
-		return $success;
-	}
-
-	/**
-	 * Clean after language delete is needed.
-	 * 
-	 * 
-	 */
-	protected function cleanLanguage(HookEvent $event)
-	{
-		$language = $event->arguments(0);
-
-		// If Babel is not managing the language then return
-		if (!in_array($language->id, $this->include)) return;
-
-		$data = $this->getDefaultData();
-		foreach ($data as $key => $value) {
-			if ($key == "root_$language->name") continue;
-			$data[$key] = $this->$key;
-		}
-		$data['include'] = array();
-		foreach ($this->include as $include_item) if ($language->id != $include_item) $data['include'][] = $include_item;
-		$this->modules->saveModuleConfigData($this->className, $data);
-		$this->include = $data['include'];
-
-		$table = self::table;
-		$stmt = $this->pdo->prepare("DELETE FROM $table WHERE language_id=:language_id");
-		$stmt->execute(array('language_id' => $language->id));
-		$this->message(sprintf(__('Deleted %1$s translation links for %2$s language'), $stmt->rowCount(), $language->title));
-	}
-
-	/**
-	 * Fixes conflicts if there are any. Primirily used on page move
-	 * When new position of the page in the pages tree brings conflicts
-	 * to it's language links
-	 * 
-	 */
-	protected function fixConflicts(HookEvent $event)
-	{
-		$page = $event->arguments(0);
-		$parent = $page->parent();
-		
-		// First of all the parent page should be translatable by
-		// Babel.
-		if (!$this->translatable($parent)) return $this->cleanTranslations($event);
-
-		$parentLanguage = $parent->language;
-
-		// if the page has a translation link with the language
-		// of it's new parent then it should be removed.
-		$translation = $page->translation($parentLanguage);
-		$page->removeTranslation($parentLanguage, true);
-	}
-
-	/**
-	 * Install Babel module
-	 */
-	public function install()
-	{
-		$table = self::table;
-				
-		// Do not install if table already exists
-		$table_exists = true;
-		try {
-			$stmt = $this->pdo->query("SELECT * FROM $table");
-		} catch (PDOException $e) {
-			$table_exists = false;
-		}
-
-		if ($table_exists) {
-			$this->error(__("The table `$table` already exists in your database. Please rename or drop it before installing Babel again."));
-			return;
-		}
-
-		// Create table
-		$stmt = $this->pdo->exec("CREATE TABLE $table (
-			`subject_id` int(10) unsigned NOT NULL,
-			`language_id` int(10) unsigned NOT NULL,
-			`object_id` int(10) unsigned NOT NULL,
-			KEY `subject_id` (`subject_id`),
-			KEY `language_id` (`language_id`),
-			KEY `object_id` (`object_id`)
-			) ENGINE=InnoDB DEFAULT CHARSET=utf8");
-
-		$this->message(__("Created table `$table` in database."));
-	}
-
-	/**
-	 * Returns configuration fields for Babel 
-	 */
-	static public function getModuleConfigInputfields(array $data)
-	{
-		$data = array_merge(self::getDefaultData(), $data);
-		$modules = wire('modules');
-		$form = new InputfieldWrapper();
-
-		$field = $modules->get("InputfieldCheckboxes");
-		$field->inputfield = 'InputfieldCheckboxes';
-		foreach (wire('languages') as $l) $field->addOption($l->id, $l->title);
-		$field->attr('name', 'include');
-		$field->attr('value', $data['include']);
-		$field->label = __("Translate languages");
-		$field->description = __('Which language links can be assigned to a page?');
-		$field->required = true;
-		$field->requiredIf = "uninstall=0";
-		$form->add($field);
-
-		foreach (wire('languages') as $l){
-			$name = "root_" . $l->name;
-			$field = $modules->get('InputfieldPageListSelect');
-			$field->label = "Root for $l->title";
-			$field->description = "Path to root page of the $l->title language.";
-			$field->attr('name', $name);
-			$field->attr('value', $data[$name]);
-			$field->required = true;
-			$field->showIf = "include=$l->id";
-			$field->requiredIf = "include=$l->id";
-			$form->add($field);
-		}
-
-		return $form;
-	}
-
-	/**
-	 * Uninstall Babel module
-	 */
-	public function uninstall()
-	{
-		$table = self::table;
-		$this->pdo->exec("DROP TABLE IF EXISTS $table");
-		$this->message(__("Dropped table `$table` from database."));
-	}
+  const table = 'babel_links';
+
+  protected $totalTranslated = array();
+  protected $totalUntranslated = array();
+
+  /**
+   * getModuleInfo is a module required by all modules to tell ProcessWire about them
+   *
+   * @return array
+   *
+   */
+  public static function getModuleInfo() {
+
+    return array(
+      'title' => 'Babel', 
+      'version' => '0011', 
+      'summary' => _('Provides functionality for section based multilingual sites on ProcessWire.'),
+      'href' => 'http://bushluk.com',
+      'singular' => true,
+      'autoload' => true, 
+      'icon' => 'language',
+      'requires' => array('LanguageSupport')
+      );
+  }
+
+  public function __construct()
+  {
+    parent::__construct();
+    $this->pdo = wire('database');
+  }
+
+  static public function getDefaultData() {
+    $defaults = array(
+      'include' => array()
+    );
+    foreach (wire('languages') as $l) $defaults['root_' . $l->name] = '';
+    return $defaults;
+  }
+
+  public function init()
+  {
+    $this->addHookProperty('Page::language', $this, 'pageLanguage');
+    $this->addHook('Page::translation', $this, 'pageTranslation');
+    $this->addHook('Page::translations', $this, 'pageTranslations');
+    $this->addHook('Page::addTranslation', $this, 'pageAddTranslation');
+    $this->addHook('Page::removeTranslation', $this, 'pageRemoveTranslation');
+    $this->addHook('Page::closestParentTranslation', $this, 'pageClosestParentTranslation');
+    $this->addHookBefore('Pages::deleteReady', $this, 'cleanTranslations');
+    $this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
+    $this->addHookBefore('Pages::saveReady', $this, 'fixConflicts');
+    $this->addHookAfter('Languages::deleted', $this, 'cleanLanguage');
+  }
+
+  /**
+   * Given a Subject and a Language returns an Object.
+   * 
+   * @param Page $subject. The subject which you want an object for.
+   * @param Language $language. The language of the object.
+   * @return Page if available, NullPage otherwise.
+   */
+  protected function getObject(Page $subject, Language $language)
+  {
+    $table = self::table;
+    $stmt = $this->pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id AND language_id=:language_id");
+    $stmt->execute(array(
+      'subject_id' => $subject->id,
+      'language_id' => $language->id
+      ));
+    if (!$stmt->rowCount()) return new NullPage();
+    $object = $stmt->fetchAll(PDO::FETCH_OBJ)[0]->object_id;
+    return wire('pages')->get("id=$object");
+  }
+
+  /**
+   * Given an Object and a Language returns a Subject.
+   * 
+   * @param Page $object. The object which you want a subject for.
+   * @param Language $language. The language of the object.
+   * @return Page if available, NullPage otherwise.
+   */
+  protected function getSubject(Page $object, Language $language)
+  {
+    $table = self::table;
+    $stmt = $this->pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id AND language_id=:language_id");
+    $stmt->execute(array(
+      'object_id' => $object->id,
+      'language_id' => $language->id
+      ));
+    if (!$stmt->rowCount()) return new NullPage();
+    $subject = $stmt->fetchAll(PDO::FETCH_OBJ)[0]->subject_id;
+    return wire('pages')->get("id=$subject");
+  }
+
+  /**
+   * Returns all objects for the given subject.
+   * 
+   * @param $subject Page object.
+   * @return PageArray.
+   */
+  protected function getObjects(Page $subject)
+  {
+    $pages = wire('pages');
+    $objects = new PageArray();
+    $table = self::table;
+    $stmt = $this->pdo->prepare("SELECT * FROM $table WHERE subject_id=:subject_id");
+    $stmt->execute(array('subject_id' => $subject->id));
+    if (!$stmt->rowCount()) return $objects;
+    while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
+      $objects->append($pages->get("id=$row->object_id"));
+    }
+    return $objects;
+  }
+
+  /**
+   * Returns all subjects for the given object.
+   * 
+   * @param $object Page object.
+   * @return PageArray.
+   */
+  protected function getSubjects(Page $object)
+  {
+    $pages = wire('pages');
+    $subjects = new PageArray();
+    $table = self::table;
+    $stmt = $this->pdo->prepare("SELECT * FROM $table WHERE object_id=:object_id");
+    $stmt->execute(array('object_id' => $object->id));
+    if (!$stmt->rowCount()) return $subjects;
+    while($row = $stmt->fetch(PDO::FETCH_OBJ)) {
+      $subjects->append($pages->get("id=$row->subject_id"));
+    }
+    return $subjects;
+  }
+
+  /**
+   * Returns the pages that are managed by Babel but does not have 
+   * a translation from one language to another.
+   * 
+   * @param Language $fromLanguage A language of the pages.
+   * @param Language $toLanguage A language to which the 
+   *        pages do not have translation for.
+   * @param int $limit. Use to max limit the amount of pages in return PageArray
+   * @param int $page. Use for pagination of the returned PageArray.
+   * @return PageArray
+   * @throws WireException 
+   */
+  public function getUntranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
+  {
+    $languages = wire('languages');
+    $pagesTable = 'pages';
+    $parentsTable = 'pages_parents';
+    $babelTable = self::table;
+
+    // populate languages
+    if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
+    if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);    
+
+    $query = new DatabaseQuerySelectBabel();
+    $query->select('SQL_CALC_FOUND_ROWS');
+    $query->limit($limit);
+    $query->offset($limit * ($page - 1));
+    $query->select('id')->from($pagesTable)->leftjoin($babelTable);
+    $query->on("$pagesTable.id = subject_id");
+
+    // if fromLanguage is given
+    if ($fromLanguage instanceof Language) {
+      $query->where($this->getQueryParents(array($fromLanguage)));
+    } else {
+      $langs = array();
+      foreach ($this->include as $l) {
+        if ($toLanguage instanceof Language && $l == $toLanguage->id) continue;
+        $langs[] = $languages->get($l);
+      }
+      $query->where($this->getQueryParents($langs));
+    }
+
+    // if toLanguage is given
+    if ($toLanguage instanceof Language) {
+      $query->on("$babelTable.language_id = $toLanguage->id");
+    }
+
+    $query->where("$babelTable.subject_id IS NULL");
+
+    $stmt = $this->pdo->prepare($query->getQuery());
+    $stmt->execute();
+    $ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+    $total = $this->pdo->prepare("SELECT FOUND_ROWS()");
+    $total->execute();
+    $this->totalUntranslated[$this->getTotalKey($fromLanguage, $toLanguage)] = $total->fetch()[0];
+    return $this->pages->getById($ids);
+  }
+
+  /**
+   * Returns the pages that have a translation from one language to 
+   * another.
+   * @param Language $fromLanguage The language of the pages
+   * @param Language $toLanguage The language to which the pages
+   *         were translated to.
+   * @param int $limit. Use to max limit the amount of pages in return PageArray
+   * @param int $page. Use for pagination of the returned PageArray.
+   * @return PageArray
+   * @throws WireException
+   */
+  public function getTranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
+  {
+    $pagesTable = 'pages';
+    $parentsTable = 'pages_parents';
+    $babelTable = self::table;
+    $languages = wire('languages');
+    
+    // populate languages
+    if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
+    if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);
+
+    $query = new DatabaseQuerySelectBabel();
+    $query->select('SQL_CALC_FOUND_ROWS');
+    $query->limit($limit);
+    $query->offset($limit * ($page - 1));
+
+    // if no languages are given
+    // select all pages that have been translated to 
+    if ($fromLanguage === null && $toLanguage === null) {
+      $query->select('subject_id')->from($babelTable);
+
+    // if either one is given
+    } else {
+      $query->select('id')->from($pagesTable)->join($babelTable);
+      $query->on("$pagesTable.id = $babelTable.subject_id");
+
+      // toLanguage is given
+      if ($toLanguage instanceof Language) $query->on("$babelTable.language_id = $toLanguage->id");
+
+      // fromLanguage is given
+      if ($fromLanguage instanceof Language) {
+        $query->where($this->getQueryParents(array($fromLanguage)));
+      } else {
+        $langs = array();
+        foreach ($this->include as $l) {
+          if ($toLanguage instanceof Language && $l == $toLanguage->id) continue;
+          $language = $languages->get($l);
+          $langs[] = $language;
+        }
+        $query->where($this->getQueryParents($langs));
+      }
+    }
+
+    $stmt = $this->pdo->prepare($query->getQuery());
+    $stmt->execute();
+    $ids = $stmt->fetchAll(PDO::FETCH_COLUMN, 0);
+    $total = $this->pdo->prepare("SELECT FOUND_ROWS()");
+    $total->execute();
+    $totalKey = $this->getTotalKey($fromLanguage, $toLanguage);
+    $this->totalTranslated[$totalKey] = $total->fetch()[0];
+    return $this->pages->getById($ids);
+  }
+
+  protected function getQueryParents(array $languages)
+  {
+    if (!count($languages)) return '';
+    $pagesTable = 'pages';
+    $parentsTable = 'pages_parents';
+    $language = array_shift($languages);
+    $parent = $this->getRoot($language);
+    $where = "parents_id = $parent->id OR pages_id = $parent->id";
+    foreach ($languages as $language) {
+      $parent = $this->getRoot($language);
+      $where .= " OR parents_id = $parent->id OR pages_id = $parent->id";  
+    }
+    
+    $parents = new DatabaseQuerySelectBabel();
+    $parents->select('pages_id')->from($parentsTable)->where($where);
+    $parents = $parents->getQuery();
+    return "$pagesTable.parent_id IN ($parents)";
+  }
+
+  /**
+   * Return the total untranslated pages fro one language to another.
+   * Used for pagination.
+   * @param Language $fromLanguage
+   * @param Language $toLanguage
+   * @return int
+   */
+  public function getUntranslatedTotal($fromLanguage = null, $toLanguage = null)
+  {
+    return $this->totalUntranslated[$this->getTotalKey($fromLanguage, $toLanguage)];
+  }
+
+
+  /**
+   * Return the total translated pages fro one language to another.
+   * Used for pagination.
+   * @param Language $fromLanguage
+   * @param Language $toLanguage
+   * @return int
+   */
+  public function getTranslatedTotal($fromLanguage = null, $toLanguage = null)
+  {
+    return $this->totalTranslated[$this->getTotalKey($fromLanguage, $toLanguage)];
+  }
+
+  /**
+   *
+   *
+   *
+   */
+  protected function getTotalKey($fromLanguage = null, $toLanguage = null)
+  {
+    $key = "";
+    if ($fromLanguage instanceof Language) {
+      $key .= $fromLanguage->name;
+    }
+
+    if ($toLanguage instanceof Language) {
+      $key .= "->" . $toLanguage->name;
+    } else {
+      $key .= "->";
+    }
+
+    return $key;
+  }
+
+  /**
+   * Returns a Language object for given page
+   * The Language is determined based on root Language page
+   * that could be configured via module settings.
+   * 
+   * @param $object Page object.
+   * @throws WireException Throws error if the Page is not a decsendent of any root Language pages
+   * @return Language object.
+   */
+  protected function getLanguage(Page $object)
+  {
+    $languages = wire('languages');
+    foreach ($this->include as $l) {
+      $l = $languages->get($l);
+      $root = $this->getRoot($l);
+      if ($object->is("has_parent=$root") || $object->is($root->path)) return $l;
+    }
+    throw new WireException("The page: `$object->id` is not managed by Babel");
+  }
+
+  /**
+   * If the given page is managed by Babel? Can it be translated?
+   * 
+   * @param $page Page object.
+   * @return boolean
+   */
+  public function translatable(Page $page)
+  {
+    try{
+      $language = $this->getLanguage($page);
+    } catch (WireException $e) {
+      return false;
+    }
+    return $language instanceof Language;
+  }
+
+  /**
+   * Hook property for all pages that is managed by Babel.
+   * Returns a language for a given page
+   * @param $event Hook Event.
+   * @return Replaces a return value if $page is managed by Babel.
+   */ 
+  protected function pageLanguage(HookEvent $event)
+  {
+    try {
+      $language = $this->getLanguage($event->object);
+    } catch (WireException $e) {
+      return;
+    }
+    $event->return = $language;
+  }
+
+  /**
+   * Returns a root Language page for given Language
+   * 
+   * @param $language Language object. The language of the root Language
+   * @throws WireException Throws error if the Language is not managed by Babel.
+   * @return Page object.
+   */
+  public function getRoot(Language $language)
+  {
+    if (!in_array($language->id, $this->include)) throw new WireException("The language $language->title is not managed by Babel.");
+    $root = "root_" . $language->name;
+    $id = $this->$root;
+    return wire('pages')->get($id);
+  }
+
+  /**
+   * Creates a link from $subject to $object.
+   * The $language of the link is determined by $object->language. 
+   * Throws error if the language of $object and $subject match.
+   *
+   * @param $subject Page object. The Page from which the link points.
+   * @param $object Page object. The Page to which the link points.
+   * @throws WireException
+   * @return boolean
+   */
+  protected function addLink(Page $subject, Page $object)
+  {
+    // Subject and Object can not be in the same language
+    // section
+    if ($subject->language === $object->language) throw new WireException('The language for both $subject and $object cannot be the same.');
+
+    // A Page can have only one link per one language
+    // If $subject already have a link for $object->language
+    // remove it first
+    $oldObject = $this->getObject($subject, $object->language);
+    if (!$oldObject instanceof NullPage) {
+      $this->removeLink($subject, $oldObject);
+    }
+
+    // Update db
+    $table = self::table;
+    try {
+      $stmt = $this->pdo->prepare("INSERT INTO $table(subject_id, language_id, object_id) VALUES(:subject_id, :language_id, :object_id)");
+
+      // Add link from subject to object
+      $stmt->execute(array(
+        'subject_id' => $subject->id,
+        'language_id' => $object->language->id,
+        'object_id' => $object->id
+        ));
+
+      $result = (boolean) $stmt->rowCount();
+    } catch (PDOException $e) {
+      $result = false;
+    }
+    return $result;
+  }
+
+  /**
+   * Removes a link from $subject to $object
+   * 
+   * @param $subject Page object. The Page from which the link points.
+   * @param $object Page object. The Page to which the link points.
+   * @return boolean True if link succesfully removed. False otherwise.
+   */
+  protected function removeLink(Page $subject, Page $object)
+  {    
+    $table = self::table;
+    try {
+      $stmt = $this->pdo->prepare("DELETE FROM $table WHERE subject_id=:subject_id AND object_id=:object_id");
+
+      // Remove link from subject to object
+      $stmt->execute(array(
+        'subject_id' => $subject->id,
+        'object_id' => $object->id
+        ));
+
+      $result = (boolean) $stmt->rowCount();
+    } catch (PDOException $e) {
+      $result = false;
+    }
+    return $result;
+  }
+
+  /**
+   * Given a language id, name, instance returns a Language object
+   * if the language can be found and is valid
+   * @param int|str|Language $language A language that should be sanitized
+   * @throws WireEception
+   * @return Language A language object
+   */
+  protected function sanitizeLanguage($language)
+  {
+    // If $language is not a Language object
+    // Try to get language by name or id
+    if (!$language instanceof Language) $language = $this->wire('languages')->get($language);
+    if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
+    if (!in_array($language->id, $this->include)) throw new WireException("Language $language->name is not handled by Babel");
+    return $language;
+  }
+
+  /**
+   * Returns a translation for page for given language
+   * or NullPage if there isn't one.
+   * 
+   * @param   string|int|Language The language of the translation.
+   *           if string assumes that it is a Language name
+   *           if integer assumes that it is an id of the Language
+   *          also can be Language object itself
+   * @throws  WireException If the language is not found or is not 
+   *          handled by Babel
+   * @return   Page|NullPage Page if available and NullPage if not.
+   */
+  protected function pageTranslation(HookEvent $event)
+  {
+    $page = $event->object;
+    $language = $this->sanitizeLanguage($event->arguments(0));
+    $event->return = $this->getObject($page, $language);
+  }
+
+  /**
+   * Returns the translation of the closests translatable parent of the page.
+   * 
+   * @param Language|int|string $language The language to which you want a translation
+   * @throws WireException
+   * @return Page The translations of the closest translatable parent
+   */
+  protected function pageClosestParentTranslation(HookEvent $event)
+  {
+    $page = $event->object;
+    $language = $this->sanitizeLanguage($event->arguments[0]);
+    $pages = $page->parents()->reverse();
+      foreach ($pages as $p) {
+        $translation = $p->translation($language);
+        if (!$translation instanceof NullPage) return $event->return = $translation;
+      }
+    $event->return = $this->getRoot($language);
+  }
+
+
+  /**
+   * Returns all translations for page
+   * or NullPage if there is any.
+   * 
+   */
+  protected function pageTranslations(HookEvent $event)
+  {
+    $event->return = $this->getObjects($event->object);
+  }
+
+  /**
+   * Translates $page. Adds a Babel link to given target.
+   * If the target page has no link that points to the 
+   * $pags's language then the reverse link will be created automatically.
+   * 
+   * @param Page $target. A page that you want to link to.
+   * @param boolean $overwrite/$remove If the target page already have a
+   *        translation from the $page's section should Babel
+   *        overwrite that link to point it back to $page instaed
+   * @return boolean If the translation is successfull or not.
+   */
+  protected function pageAddTranslation(HookEvent $event)
+  {
+    $subject = $event->object;
+    $target = $event->arguments(0);
+    $overwrite = $event->arguments(1);
+    $success = false;
+
+    // $target is not a Page and cannot get us a Page
+    // then throw an error
+    if ($target instanceof Page) $object = $target;
+    else $object = wire('pages')->get($target);
+    if (!$object instanceof Page) throw new WireException("Unknown Page `$target`.");
+
+    // Assuming $overwrite is not given
+    // If the target has no translation link for 
+    // $page's language then add it automatically
+    if (is_null($overwrite)) $overwrite = $this->getObject($object, $subject->language) instanceof NullPage;
+
+    // Add a link
+    $success = $this->addLink($subject, $object);
+
+    // If the $overwrite is true then
+    // overwrite a reverse link also
+    if ($overwrite) $success = $this->addLink($object, $subject);
+
+    $event->return = $success;
+  }
+
+  /**
+   * Removes a translation from the page.
+   * @param string|int|Language What language link
+   *        you wish to remove
+   * @param boolean $remove If the translation
+   *         is pointing back to this page should Babel
+   *         remove that link too.
+   * @throws WireException
+   * @return boolean. If the removal is successful or not.
+   */
+  protected function pageRemoveTranslation(HookEvent $event)
+  {
+    $subject = $event->object;
+    $language = $event->arguments(0);
+    $remove = (boolean) $event->arguments(1);
+    $success = false;
+
+    if (!$language instanceof Language) $language = wire('languages')->get($language);
+    if (!$language instanceof Language) throw new WireException("Unknown Language `$language`.");
+
+    $object = $this->getObject($subject, $language);
+  
+    if ($object instanceof NullPage) {
+      $success = false;
+    } else {
+      // Remove the link
+      $success = $this->removeLink($subject, $object);
+
+      // Remove reverse link if asked and if there is one
+      if ($remove) $success = $this->removeLink($object, $subject);
+    }
+
+    $event->return = $success;
+  }
+
+  /**
+   * Cleans all the translation connections to
+   * and from the page.
+   * @param Page $page. The Page that you want to clean after.
+   * @return boolean. If successfully cleaned or not.
+   */
+  protected function cleanTranslations(HookEvent $event)
+  {
+    $page = $event->arguments(0);
+    $success = true;
+    foreach($this->getSubjects($page) as $subject) {
+      if (!$this->removeLink($subject, $page)) {
+        $success = false;
+        $this->message(sprintf(__('Couldn\'t remove translation link between %1$s and %2$s'), $page->title, $subject->title));
+      } else {
+        $this->message(sprintf(__('Removed translation link between %1$s and %2$s'), $page->title, $subject->title));
+      }
+    }
+
+    foreach($this->getObjects($page) as $object) {
+      if (!$this->removeLink($page, $object)) {
+        $success = false;
+        $this->message(sprintf(__('Couldn\'t remove translation link between %1$s and %2$s'), $page->title, $object->title));
+      } else {
+        $this->message(sprintf(__('Removed translation link between %1$s and %2$s'), $page->title, $object->title));
+      }
+    }
+
+    return $success;
+  }
+
+  /**
+   * Clean after language delete is needed.
+   * 
+   * 
+   */
+  protected function cleanLanguage(HookEvent $event)
+  {
+    $language = $event->arguments(0);
+
+    // If Babel is not managing the language then return
+    if (!in_array($language->id, $this->include)) return;
+
+    $data = $this->getDefaultData();
+    foreach ($data as $key => $value) {
+      if ($key == "root_$language->name") continue;
+      $data[$key] = $this->$key;
+    }
+    $data['include'] = array();
+    foreach ($this->include as $include_item) if ($language->id != $include_item) $data['include'][] = $include_item;
+    $this->modules->saveModuleConfigData($this->className, $data);
+    $this->include = $data['include'];
+
+    $table = self::table;
+    $stmt = $this->pdo->prepare("DELETE FROM $table WHERE language_id=:language_id");
+    $stmt->execute(array('language_id' => $language->id));
+    $this->message(sprintf(__('Deleted %1$s translation links for %2$s language'), $stmt->rowCount(), $language->title));
+  }
+
+  /**
+   * Fixes conflicts if there are any. Primirily used on page move
+   * When new position of the page in the pages tree brings conflicts
+   * to it's language links
+   * 
+   */
+  protected function fixConflicts(HookEvent $event)
+  {
+    $page = $event->arguments(0);
+    $parent = $page->parent();
+    
+    // First of all the parent page should be translatable by
+    // Babel.
+    if (!$this->translatable($parent)) return $this->cleanTranslations($event);
+
+    $parentLanguage = $parent->language;
+
+    // if the page has a translation link with the language
+    // of it's new parent then it should be removed.
+    $translation = $page->translation($parentLanguage);
+    $page->removeTranslation($parentLanguage, true);
+  }
+
+  /**
+   * Install Babel module
+   */
+  public function install()
+  {
+    $table = self::table;
+        
+    // Do not install if table already exists
+    $table_exists = true;
+    try {
+      $stmt = $this->pdo->query("SELECT * FROM $table");
+    } catch (PDOException $e) {
+      $table_exists = false;
+    }
+
+    if ($table_exists) {
+      $this->error(__("The table `$table` already exists in your database. Please rename or drop it before installing Babel again."));
+      return;
+    }
+
+    // Create table
+    $stmt = $this->pdo->exec("CREATE TABLE $table (
+      `subject_id` int(10) unsigned NOT NULL,
+      `language_id` int(10) unsigned NOT NULL,
+      `object_id` int(10) unsigned NOT NULL,
+      KEY `subject_id` (`subject_id`),
+      KEY `language_id` (`language_id`),
+      KEY `object_id` (`object_id`)
+      ) ENGINE=InnoDB DEFAULT CHARSET=utf8");
+
+    $this->message(__("Created table `$table` in database."));
+  }
+
+  /**
+   * Returns configuration fields for Babel 
+   */
+  static public function getModuleConfigInputfields(array $data)
+  {
+    $data = array_merge(self::getDefaultData(), $data);
+    $modules = wire('modules');
+    $form = new InputfieldWrapper();
+
+    $field = $modules->get("InputfieldCheckboxes");
+    $field->inputfield = 'InputfieldCheckboxes';
+    foreach (wire('languages') as $l) $field->addOption($l->id, $l->title);
+    $field->attr('name', 'include');
+    $field->attr('value', $data['include']);
+    $field->label = __("Translate languages");
+    $field->description = __('Which language links can be assigned to a page?');
+    $field->required = true;
+    $field->requiredIf = "uninstall=0";
+    $form->add($field);
+
+    foreach (wire('languages') as $l){
+      $name = "root_" . $l->name;
+      $field = $modules->get('InputfieldPageListSelect');
+      $field->label = "Root for $l->title";
+      $field->description = "Path to root page of the $l->title language.";
+      $field->attr('name', $name);
+      $field->attr('value', $data[$name]);
+      $field->required = true;
+      $field->showIf = "include=$l->id";
+      $field->requiredIf = "include=$l->id";
+      $form->add($field);
+    }
+
+    return $form;
+  }
+
+  /**
+   * Uninstall Babel module
+   */
+  public function uninstall()
+  {
+    $table = self::table;
+    $this->pdo->exec("DROP TABLE IF EXISTS $table");
+    $this->message(__("Dropped table `$table` from database."));
+  }
 }

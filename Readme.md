@@ -3,9 +3,9 @@
 Babel is a [ProcessWire][PW] module that provides functionality for managing 
 section based multilanguage sites. It is inspired by [Babel Plugin][Babel MODX] for [MODX][MODX].
 
-[PW]: 					https://processwire.com "Open source CMS with a great API–ProcessWire CMF/CMS"
-[Babel MODX]: 	http://rtfm.modx.com/extras/revo/babel
-[MODX]: 				http://modx.com/
+[PW]:           https://processwire.com "Open source CMS with a great API–ProcessWire CMF/CMS"
+[Babel MODX]:   http://rtfm.modx.com/extras/revo/babel
+[MODX]:         http://modx.com/
 
 ## How to Install
 
@@ -25,33 +25,33 @@ Usually multilingual sites will have a structure like...
 
 ```
 Root
-	|__Home (English)
-	     |__About
-	     |__News
-	     		  |__ News Article 1
-	     		  |__ News Article 2
-	     		  |__ News Article 3
-	     		  |__ News Article 4
-	     |__Contact
-	     ...
-	|__Главная (Russian)
-	     |__О нас
-	     |__Новости
-	     		  |__ Новостная статья 1
-	     		  |__ Новостная статья 2
-	     		  |__ Новостная статья 3
-	     		  |__ Новостная статья 4
-	     |__Связаться
-	     ...
-	|__Baş (Turkmen)
-	     |__Barada
-	     |__Habarlar
-	     		  |__ Habar Makalasy 1
-	     		  |__ Habar Makalasy 2
-	     		  |__ Habar Makalasy 3
-	     		  |__ Habar Makalasy 4
-	     |__Aragatnaşyk
-	     ...
+  |__Home (English)
+       |__About
+       |__News
+           |__ News Article 1
+           |__ News Article 2
+           |__ News Article 3
+           |__ News Article 4
+       |__Contact
+       ...
+  |__Главная (Russian)
+       |__О нас
+       |__Новости
+           |__ Новостная статья 1
+           |__ Новостная статья 2
+           |__ Новостная статья 3
+           |__ Новостная статья 4
+       |__Связаться
+       ...
+  |__Baş (Turkmen)
+       |__Barada
+       |__Habarlar
+           |__ Habar Makalasy 1
+           |__ Habar Makalasy 2
+           |__ Habar Makalasy 3
+           |__ Habar Makalasy 4
+       |__Aragatnaşyk
+       ...
 ```
 All you need to do is to link already existing pages as translations to each 
 other and Babel will try to figure out where should the new pages be created when 
@@ -65,7 +65,7 @@ Babel creates couple useful methods and properties on `$page` object for you.
 This method returns one page that was assigned as a translation for the given `$language`.
 
 ##### Syntax
-	$page->translation($language);
+  $page->translation($language);
 
 ##### Arguments
 The method accepts only one argument. The `$language` argument could be either a 
@@ -83,7 +83,7 @@ This method will return the pages that were assigned as a translation for all `$
 Or an empty `WireArray` if no translations are available.
 
 #####Syntax
-	$page->translations();
+  $page->translations();
 
 #####Return
 Returns `PageArray`.
@@ -93,7 +93,7 @@ This method will create a translation link to the given page if not already exis
 overwrite if otherwise.
 
 ##### Syntax
-	$page->addTranslation($otherPage);
+  $page->addTranslation($otherPage);
 
 ##### Arguments
 The `$otherPage` argument should be a `Page` object. The language of the page
@@ -107,7 +107,7 @@ page is located.
 The method removes a translation link between `$page` and `$otherPage`.
 
 #####Syntax
-	$page->removeTranslation($language, $remove);
+  $page->removeTranslation($language, $remove);
 
 #####Arguments
 `$language` (`string|integer|Language`) The language link you wish to remove.
