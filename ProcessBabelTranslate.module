@@ -103,8 +103,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
 			'singular' => true,
 			'autoload' => "process=ProcessPageList|ProcessPageEdit",
 			'icon' => 'language',
-			'requires' => array('Babel', 'JqueryMagnific'),
-			'installs' => 'Babel',
+			'requires' => array('Babel', 'JqueryMagnific', 'LanguageSupport', 'MarkupAdminDataTable'),
 			'page' => array(
 				'parent' => 'page',
 				'name' => 'babel-translate',
