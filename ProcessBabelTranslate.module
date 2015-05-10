@@ -739,7 +739,7 @@ class ProcessBabelTranslate extends Process implements Module, ConfigurableModul
       $field->label = __("Target");
       $field->showIf = "babel_type_$l->name=existing";
       if ($translatedParent instanceof Page) {
-        $field->attr('open-ids', (string) $translatedParent->parents("id!=$field->parent_id")->append($translatedParent));
+        $field->attr('open-ids', (string) $translatedParent->parents()->and($translatedParent)->filter("id!=$field->parent_id"));
       }
       $fieldset->add($field);
 
