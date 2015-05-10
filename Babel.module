@@ -154,11 +154,11 @@ class Babel extends WireData implements Module, ConfigurableModule {
    * @param Language $toLanguage A language to which the 
    *        pages do not have translation for.
    * @param int $limit. Use to max limit the amount of pages in return PageArray
-   * @param int $page. Use for pagination of the returned PageArray.
+   * @param int $pageNum. Use for pagination of the returned PageArray.
    * @return PageArray
    * @throws WireException 
    */
-  public function getUntranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
+  public function getUntranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $pageNum = 1)
   {
     $languages = wire('languages');
     $pagesTable = 'pages';
@@ -166,13 +166,14 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $babelTable = self::table;
 
     // populate languages
-    if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
-    if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);    
+    if ($fromLanguage !== null) $fromLanguage = $this->sanitizeLanguage($fromLanguage);
+    if ($toLanguage !== null) $toLanguage = $this->sanitizeLanguage($toLanguage);    
+    if ($pageNum < 1) $pageNum = 1;
 
     $query = new DatabaseQuerySelectBabel();
     $query->select('SQL_CALC_FOUND_ROWS');
     $query->limit($limit);
-    $query->offset($limit * ($page - 1));
+    $query->offset($limit * ($pageNum - 1));
     $query->select('id')->from($pagesTable)->leftjoin($babelTable);
     $query->on("$pagesTable.id = subject_id");
 
@@ -211,11 +212,11 @@ class Babel extends WireData implements Module, ConfigurableModule {
    * @param Language $toLanguage The language to which the pages
    *         were translated to.
    * @param int $limit. Use to max limit the amount of pages in return PageArray
-   * @param int $page. Use for pagination of the returned PageArray.
+   * @param int $pageNum. Use for pagination of the returned PageArray.
    * @return PageArray
    * @throws WireException
    */
-  public function getTranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $page = 1)
+  public function getTranslated($fromLanguage = null, $toLanguage = null, $limit = 50, $pageNum = 1)
   {
     $pagesTable = 'pages';
     $parentsTable = 'pages_parents';
@@ -223,13 +224,14 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $languages = wire('languages');
     
     // populate languages
-    if ($fromLanguage !== null && !$fromLanguage instanceof Language) $fromLanguage = $languages->get($fromLanguage);
-    if ($toLanguage !== null && !$toLanguage instanceof Language) $toLanguage = $languages->get($toLanguage);
+    if ($fromLanguage !== null) $fromLanguage = $this->sanitizeLanguage($fromLanguage);
+    if ($toLanguage !== null) $toLanguage = $this->sanitizeLanguage($toLanguage);
+    if ($pageNum < 1) $pageNum = 1;
 
     $query = new DatabaseQuerySelectBabel();
     $query->select('SQL_CALC_FOUND_ROWS');
     $query->limit($limit);
-    $query->offset($limit * ($page - 1));
+    $query->offset($limit * ($pageNum - 1));
 
     // if no languages are given
     // select all pages that have been translated to 
@@ -284,7 +286,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $parents = new DatabaseQuerySelectBabel();
     $parents->select('pages_id')->from($parentsTable)->where($where);
     $parents = $parents->getQuery();
-    return "$pagesTable.parent_id IN ($parents)";
+    return "$pagesTable.parent_id IN ($parents) OR $pagesTable.id = $parent->id";
   }
 
   /**
@@ -388,13 +390,13 @@ class Babel extends WireData implements Module, ConfigurableModule {
   /**
    * Returns a root Language page for given Language
    * 
-   * @param $language Language object. The language of the root Language
+   * @param $language string|int|Language. The language of the root Language
    * @throws WireException Throws error if the Language is not managed by Babel.
    * @return Page object.
    */
-  public function getRoot(Language $language)
+  public function getRoot($language)
   {
-    if (!in_array($language->id, $this->include)) throw new WireException("The language $language->title is not managed by Babel.");
+    $language = $this->sanitizeLanguage($language);
     $root = "root_" . $language->name;
     $id = $this->$root;
     return wire('pages')->get($id);
@@ -480,8 +482,9 @@ class Babel extends WireData implements Module, ConfigurableModule {
   {
     // If $language is not a Language object
     // Try to get language by name or id
+    $value = $language;
     if (!$language instanceof Language) $language = $this->wire('languages')->get($language);
-    if (!$language instanceof Language) throw new WireException("Couldn't find a language `$language`.");
+    if (!$language instanceof Language) throw new WireException("Couldn't find a language `$value`.");
     if (!in_array($language->id, $this->include)) throw new WireException("Language $language->name is not handled by Babel");
     return $language;
   }
@@ -587,12 +590,9 @@ class Babel extends WireData implements Module, ConfigurableModule {
   protected function pageRemoveTranslation(HookEvent $event)
   {
     $subject = $event->object;
-    $language = $event->arguments(0);
+    $language = $this->sanitizeLanguage($event->arguments(0));
     $remove = (boolean) $event->arguments(1);
     $success = false;
-
-    if (!$language instanceof Language) $language = wire('languages')->get($language);
-    if (!$language instanceof Language) throw new WireException("Unknown Language `$language`.");
 
     $object = $this->getObject($subject, $language);
   
@@ -739,7 +739,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $field->attr('name', 'include');
     $field->attr('value', $data['include']);
     $field->label = __("Translate languages");
-    $field->description = __('Which language links can be assigned to a page?');
+    $field->description = __('What languages should Babel handle?');
     $field->required = true;
     $field->requiredIf = "uninstall=0";
     $form->add($field);
@@ -748,7 +748,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
       $name = "root_" . $l->name;
       $field = $modules->get('InputfieldPageListSelect');
       $field->label = "Root for $l->title";
-      $field->description = "Path to root page of the $l->title language.";
+      $field->description = "The root page of the $l->title language.";
       $field->attr('name', $name);
       $field->attr('value', $data[$name]);
       $field->required = true;
