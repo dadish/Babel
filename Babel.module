@@ -278,15 +278,17 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $language = array_shift($languages);
     $parent = $this->getRoot($language);
     $where = "parents_id = $parent->id OR pages_id = $parent->id";
+    $rootParents = "$parent->id";
     foreach ($languages as $language) {
       $parent = $this->getRoot($language);
-      $where .= " OR parents_id = $parent->id OR pages_id = $parent->id";  
+      $where .= " OR parents_id = $parent->id OR pages_id = $parent->id";
+      $rootParents .= ", $parent->id";
     }
     
     $parents = new DatabaseQuerySelectBabel();
     $parents->select('pages_id')->from($parentsTable)->where($where);
     $parents = $parents->getQuery();
-    return "$pagesTable.parent_id IN ($parents) OR $pagesTable.id = $parent->id";
+    return "($pagesTable.parent_id IN ($parents) OR $pagesTable.id IN ($rootParents))";
   }
 
   /**

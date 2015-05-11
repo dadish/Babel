@@ -61,7 +61,7 @@ class DatabaseQuerySelectBabel extends DatabaseQuerySelect {
   protected function getQueryOn() {
     if(!count($this->on)) return '';
     $on = $this->on; 
-    $sql = "\nON (" . array_shift($on) . " ";
+    $sql = "\nON (" . array_shift($on);
     foreach($on as $n) $sql .= " AND $n";
     $sql .= ") ";
     return $sql;
