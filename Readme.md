@@ -144,7 +144,7 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 
 
 ### closestParentTranslation (Page method)
-Returns the translation of the closests translatable parent of the page.
+Returns the translation of the closests translated parent of the page.
 ##### Syntax
 ```
 $page->closestParentTranslation($language);
