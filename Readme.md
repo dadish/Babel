@@ -53,7 +53,7 @@ Root
 ```
 You just need to select the languages that you want Babel to manage and 
 select the root pages for each of them.
-<img src="imgs/bbl_settings.png" alt="Babel settings" style="border : 1px solid #ddd" />
+![Babel settings](imgs/bbl_settings.png "Babel settings")
 
 
 ## API
@@ -236,24 +236,24 @@ And you get a Babel Tanslate page where you can quickly find all the translated
 and untranslated pages accross your site. See the screenshots below...
 
 ######Settings page
-<img src="imgs/pbt_settings.png" alt="ProcessBabelTranslate settings" style="border : 1px solid #ddd"/>
+![ProcessBabelTranslate settings](imgs/pbt_settings.png "ProcessBabelTranslate settings")
 
 ######Translation indicators
-<img src="imgs/pbt_indicators.png" alt="ProcessBabelTranslate language indicators" style="border : 1px solid #ddd"/>
+![ProcessBabelTranslate language indicators](imgs/pbt_indicators.png "ProcessBabelTranslate language indicators")
 
 ######Quick action button
-<img src="imgs/pbt_action_button.png" alt="ProcessBabelTranslate quick action buttons" style="border : 1px solid #ddd"/>
+![ProcessBabelTranslate quick action buttons](imgs/pbt_action_button.png "ProcessBabelTranslate quick action buttons")
 
 ######Quick modal translate form
-<img src="imgs/pbt_quick_translate.png" alt="ProcessBabelTranslate quick translate modal form" style="border : 1px solid #ddd"/>
+![ProcessBabelTranslate quick translate modal form](imgs/pbt_quick_translate.png "ProcessBabelTranslate quick translate modal form")
 
 ######Tab translate form
-<img src="imgs/pbt_translate_form.png" alt="ProcessBabelTranslate tab translate form" style="border : 1px solid #ddd"/>
+![ProcessBabelTranslate tab translate form](imgs/pbt_translate_form.png "ProcessBabelTranslate tab translate form")
 
 ######ProcessBabelTranslate page
-<img src="imgs/pbt_pages_menu.png" alt="ProcessBabelTranslate page menu item" style="border : 1px solid #ddd"/>
+![ProcessBabelTranslate page menu item](imgs/pbt_pages_menu.png "ProcessBabelTranslate page menu item")
 
-<img src="imgs/pbt_find.png" alt="ProcessBabelTranslate process page" style="border : 1px solid #ddd"/>
+![ProcessBabelTranslate process page](imgs/pbt_find.png "ProcessBabelTranslate process page")
 
 
 ##License
