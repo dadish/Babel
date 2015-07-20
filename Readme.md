@@ -3,11 +3,11 @@
 Babel is a [ProcessWire][PW] module that provides functionality for managing 
 section based multilanguage sites. It is inspired by [Babel Plugin][Babel MODX] for [MODX][MODX].
 
-[PW]:           https://processwire.com "Open source CMS with a great API–ProcessWire CMF/CMS"
-[Babel MODX]:   http://rtfm.modx.com/extras/revo/babel
-[MODX]:         http://modx.com/
 
 ## How to Install
+###Requirements
+Babel is works on top of core LanguageSupport module. You will have to install
+it first and create languages for your site. Then:
 
 1. Copy all the files in this directory to /site/modules/Babel/ 
 
@@ -67,7 +67,7 @@ you choose on Babel module's settings page) will have a `language` property that
 returns a `Language` object that they are assigned to. It is determined based on
 under which rootParent the `$page` lives;
 ##### Syntax
-```
+```php
 $page->language;
 ```
 ##### Return
@@ -79,7 +79,7 @@ $page->language;
 This method returns the page that was assigned as a translation for the given `$language`.
 
 ##### Syntax
-```
+```php
 $page->translation($language);
 ```
 ##### Arguments
@@ -96,7 +96,7 @@ The method returns a `Page` object or `NullPage` if the translation is not avail
 This method will return the pages that were assigned as a translation for all `$languages`.
 Or an empty `PageArray` if no translations are available.
 #####Syntax
-```
+```php
 $page->translations();
 ```
 #####Return
@@ -107,8 +107,8 @@ Returns `PageArray`.
 ### addTranslation (Page method)
 This method will create a translation link from `$page` to `$otherPage`.
 ##### Syntax
-```
-$page->addTranslation($otherPage, $overwrite);
+```php
+$page->addTranslation($otherPage[, $overwrite]);
 ```
 ##### Arguments
 The `$otherPage` argument should be a `Page` object. The language of the page
@@ -129,8 +129,8 @@ the `$otherPage` does not have any translation links.
 ### removeTranslation (Page method)
 The method removes a translation link between `$page` and `$otherPage`.
 #####Syntax
-```
-$page->removeTranslation($language, $remove);
+```php
+$page->removeTranslation($language[, $remove]);
 ```
 #####Arguments
 `$language` (`string|integer|Language`) The language link you wish to remove.
@@ -146,7 +146,7 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 ### closestParentTranslation (Page method)
 Returns the translation of the closests translated parent of the page.
 ##### Syntax
-```
+```php
 $page->closestParentTranslation($language);
 ```
 ##### Arguments
@@ -163,7 +163,7 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 Returns the rootPage of the language. The one you have assigned in the module settings
 page.
 #####Syntaxt
-```
+```php
 $modules->get('Babel')->getRoot($language);
 ```
 #####Arguments
@@ -178,7 +178,7 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 ### translatable (Babel method)
 Tells if a page is translatable via Babel or not.
 #####Syntax
-```
+```php
 $modules->get('Babel')->translatable($page);
 ```
 #####Arguments
@@ -191,8 +191,8 @@ $modules->get('Babel')->translatable($page);
 ###getTranslated (Babel method)
 Returns a PageArray of translated pages. 
 #####Syntax
-```
-$modules->get('Babel')->getTranslated($fromLanguage, $toLanguage, $limit, $pageNum);
+```php
+$modules->get('Babel')->getTranslated($fromLanguage, $toLanguage[, $limit[, $pageNum]]);
 ```
 #####Arguments
 `$fromLanguage` (`string|integer|Language`) The language __from__ which the translation is.
@@ -210,8 +210,8 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 ###getUntranslated (Babel method)
 Returns a PageArray of pages that are not translated to one or the other language.
 #####Syntax
-```
-$modules->get('Babel')->getTranslated($fromLanguage, $toLanguage, $limit, $pageNum);
+```php
+$modules->get('Babel')->getUntranslated($fromLanguage, $toLanguage[, $limit[, $pageNum]]);
 ```
 #####Arguments
 `$fromLanguage` (`string|integer|Language`) The language from which there is no translation.
@@ -265,3 +265,7 @@ This program is distributed in the hope that it will be useful, but WITHOUT ANY 
 You should have received a copy of the GNU General Public License along with this program; if not, write to the Free Software Foundation, Inc., 51 Franklin Street, Fifth Floor, Boston, MA 02110-1301, USA.
 
 (See included LICENSE file for full license text.)
+
+[PW]:           https://processwire.com "Open source CMS with a great API–ProcessWire CMF/CMS"
+[Babel MODX]:   http://rtfm.modx.com/extras/revo/babel
+[MODX]:         http://modx.com/
