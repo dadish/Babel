@@ -78,15 +78,13 @@ class Babel extends WireData implements Module, ConfigurableModule {
     // array of names of the language home pages
     $langs = array();
     foreach ($this->includes as $name) $langs[] = $this->getRoot($name)->name;
-    $default_home = $this->getRoot($this->default_language);
-
     $home = $page->rootParent();
     
     if (!in_array($home->name, $langs)) {
       if (isset($session->babel_language) && is_array($session->babel_language, $langs)) {
         $home = $pages->get("/$session->babel_language/");
       }else {
-        $home = $pages->get("/$default_home->name/");
+        $home = $this->getRoot($this->default_language);
       }
     }
 

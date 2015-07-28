@@ -228,6 +228,26 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 `PageArray`.
 
 
+##Usage Tips
+If your site structure is the way it looks like it is shown above. Your root 
+page should not ever render. Whenever a user enters your side at the `/` path
+then you usually redirect him to one of language root pages. Here is how I
+suggest you to do that in your root.php ...
+```php
+$session->redirect($config->babelHomePage->url, false);
+
+```
+that's pretty much everything you need to have in your `root.php` file.
+
+Another gotcha for when working with babel is to assign a language to the user
+in every page request so that proper language values are returned from the
+ProcessWire's LangugeSupport module. For that place the code below to some file
+that is included in every page request. Like `_init.php` that you might be using
+for a `$config->prependTemplateFile`.
+```php
+$user->language = $page->language;
+```
+
 ##ProcessBabelTranslate
 Babel comes with very useful admin helper. You can link pages as a translation for
 each other. You can create translation page if there isn't one yet. There is small 
