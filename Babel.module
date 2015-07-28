@@ -46,7 +46,8 @@ class Babel extends WireData implements Module, ConfigurableModule {
 
   static public function getDefaultData() {
     $defaults = array(
-      'include' => array()
+      'include' => array(),
+      'default_language' => 'default'
     );
     foreach (wire('languages') as $l) $defaults['root_' . $l->name] = '';
     return $defaults;
@@ -64,6 +65,32 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
     $this->addHookBefore('Pages::saveReady', $this, 'fixConflicts');
     $this->addHookAfter('Languages::deleted', $this, 'cleanLanguage');
+
+    $this->config->babelHomePage = $this->getHomePage();
+  }
+
+  public function getHomePage()
+  {
+    $session = wire('session');
+    $pages = wire('pages');
+    $page = wire('page');
+
+    // array of names of the language home pages
+    $langs = array();
+    foreach ($this->includes as $name) $langs[] = $this->getRoot($name)->name;
+    $default_home = $this->getRoot($this->default_language);
+
+    $home = $page->rootParent();
+    
+    if (!in_array($home->name, $langs)) {
+      if (isset($session->babel_language) && is_array($session->babel_language, $langs)) {
+        $home = $pages->get("/$session->babel_language/");
+      }else {
+        $home = $pages->get("/$default_home->name/");
+      }
+    }
+
+    return $home;
   }
 
   /**
@@ -733,11 +760,12 @@ class Babel extends WireData implements Module, ConfigurableModule {
   {
     $data = array_merge(self::getDefaultData(), $data);
     $modules = wire('modules');
+    $languages = wire('languages');
     $form = new InputfieldWrapper();
 
     $field = $modules->get("InputfieldCheckboxes");
     $field->inputfield = 'InputfieldCheckboxes';
-    foreach (wire('languages') as $l) $field->addOption($l->id, $l->title);
+    foreach ($languages as $l) $field->addOption($l->id, $l->title);
     $field->attr('name', 'include');
     $field->attr('value', $data['include']);
     $field->label = __("Translate languages");
@@ -746,7 +774,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $field->requiredIf = "uninstall=0";
     $form->add($field);
 
-    foreach (wire('languages') as $l){
+    foreach ($languages as $l){
       $name = "root_" . $l->name;
       $field = $modules->get('InputfieldPageListSelect');
       $field->label = "Root for $l->title";
@@ -758,6 +786,16 @@ class Babel extends WireData implements Module, ConfigurableModule {
       $field->requiredIf = "include=$l->id";
       $form->add($field);
     }
+
+    $field = $modules->get('InputfieldSelect');
+    $field->name = 'default_language';
+    $field->description = __('Default Language');
+    foreach ($languages as $l) {
+      $field->addOption($l->name, $l->title);
+    }
+    $field->attr('value', $data['default_language']);
+    $field->required = true;
+    $form->add($field);
 
     return $form;
   }
