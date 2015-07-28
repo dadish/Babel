@@ -88,6 +88,8 @@ class Babel extends WireData implements Module, ConfigurableModule {
       }
     }
 
+    $session->babel_language = $home->language->name;
+
     return $home;
   }
 
