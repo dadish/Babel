@@ -65,32 +65,37 @@ class Babel extends WireData implements Module, ConfigurableModule {
     $this->addHookBefore('Pages::trash', $this, 'cleanTranslations');
     $this->addHookBefore('Pages::saveReady', $this, 'fixConflicts');
     $this->addHookAfter('Languages::deleted', $this, 'cleanLanguage');
-
-    $this->config->babelHomePage = $this->getHomePage();
+    $this->addHookAfter('ProcessPageView::ready', $this, 'hookSetHomePage');
   }
 
-  public function getHomePage()
+  public function ___setHomePage()
   {
     $session = wire('session');
     $pages = wire('pages');
     $page = wire('page');
+    $user = wire('user');
 
     // array of names of the language home pages
     $langs = array();
-    foreach ($this->includes as $name) $langs[] = $this->getRoot($name)->name;
+    foreach ($this->include as $name) $langs[] = $this->getRoot($name)->name;
     $home = $page->rootParent();
     
     if (!in_array($home->name, $langs)) {
-      if (isset($session->babel_language) && is_array($session->babel_language, $langs)) {
-        $home = $pages->get("/$session->babel_language/");
+      if ($session->babel_home && in_array($session->babel_home, $langs)) {
+        $home = $pages->get("/$session->babel_home/");
       }else {
         $home = $this->getRoot($this->default_language);
       }
     }
 
-    $session->babel_language = $home->language->name;
+    $session->babel_home = $home->name;
+    $user->language = $home->language;
+    wire('config')->babelHomePage = $home;
+  }
 
-    return $home;
+  protected function hookSetHomePage(HookEvent $event)
+  {
+    $this->setHomePage();
   }
 
   /**
