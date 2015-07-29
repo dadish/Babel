@@ -6,12 +6,12 @@ section based multilanguage sites. It is inspired by [Babel Plugin][Babel MODX] 
 
 ## How to Install
 ###Requirements
-Babel is works on top of core LanguageSupport module. You will have to install
+Babel works on top of core `LanguageSupport` module. You will have to install
 it first and create languages for your site. Then:
 
 1. Copy all the files in this directory to /site/modules/Babel/ 
 
-2. In your admin, go to Modules > Check for new modules. 
+2. In your admin, go to Modules > Refresh for new modules. 
 
 3. Click the "Install" button next to Babel.
 
@@ -57,7 +57,7 @@ select the root pages for each of them.
 
 
 ## API
-Babel creates couple useful methods and a property on `$page` object for you.
+Babel creates couple useful methods and a properties for you.
 
 
 
@@ -93,8 +93,9 @@ The method returns a `Page` object or `NullPage` if the translation is not avail
 
 
 ### translations (Page method)
-This method will return the pages that were assigned as a translation for all `$languages`.
-Or an empty `PageArray` if no translations are available.
+This method will return the pages that were assigned as a translation for all 
+`$languages` that available for that page. Or an empty `PageArray` if no 
+translations are available.
 #####Syntax
 ```php
 $page->translations();
@@ -144,7 +145,7 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 
 
 ### closestParentTranslation (Page method)
-Returns the translation of the closests translated parent of the page.
+Returns the translation of the closest translated parent of the page.
 ##### Syntax
 ```php
 $page->closestParentTranslation($language);
@@ -167,7 +168,7 @@ page.
 $modules->get('Babel')->getRoot($language);
 ```
 #####Arguments
-`$language` (`string|integer|Language`) The language link you wish to remove.
+`$language` (`string|integer|Language`)
 #####Throws
 Throws `WireException` if the language couldn't be found or is not handled by Babel.
 #####Return
@@ -214,11 +215,11 @@ Returns a PageArray of pages that are not translated to one or the other languag
 $modules->get('Babel')->getUntranslated($fromLanguage, $toLanguage[, $limit[, $pageNum]]);
 ```
 #####Arguments
-`$fromLanguage` (`string|integer|Language`) The language from which there is no translation.
-If omitted (or `null` given) then all the untranslated pages from any language will be
+`$fromLanguage` (`string|integer|Language`) The language __from__ which there is no translation.
+If omitted (or `null` given) then all the untranslated pages __from__ any language will be
 considered.
-`$toLanguage` (`string|integer|Language`) The language to which there is no translation.
-If omitted (or `null` given) then untranslated pages to any language will be considered.
+`$toLanguage` (`string|integer|Language`) The language __to__ which there is no translation.
+If omitted (or `null` given) then untranslated pages __to__ any language will be considered.
 `$limit` is the number of pages you want to recieve. Default is 50.
 `$pageNum` is the page number.  Use for pagination of the returned PageArray.
 Default is 1.
@@ -227,26 +228,30 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 #####Return
 `PageArray`.
 
+###babelHomePage ($config property)
+Reference to the home page. This is usually one of the pages that you chose ine
+the module settings.
+#####Syntax
+```php
+$config->babelHomePage;
+```
+The `babelHomePage` is determined based on:
+  the path that user has entered...
+  if not available then the session is checked...
+  if not available then it defaults to the core `LanguageSupport` module's
+  default language;
 
 ##Usage Tips
 If your site structure is the way it looks like it is shown above. Your root 
-page should not ever render. Whenever a user enters your side at the `/` path
-then you usually redirect him to one of language root pages. Here is how I
-suggest you to do that in your root.php ...
+page usually won't ever render. Whenever a user enters your site at the `/` path
+you will redirect him to one of language root pages. Here is how I suggest you
+to do that in your `root.php` template file.
 ```php
 $session->redirect($config->babelHomePage->url, false);
 
 ```
 that's pretty much everything you need to have in your `root.php` file.
 
-Another gotcha for when working with babel is to assign a language to the user
-in every page request so that proper language values are returned from the
-ProcessWire's LangugeSupport module. For that place the code below to some file
-that is included in every page request. Like `_init.php` that you might be using
-for a `$config->prependTemplateFile`.
-```php
-$user->language = $page->language;
-```
 
 ##ProcessBabelTranslate
 Babel comes with very useful admin helper. You can link pages as a translation for
