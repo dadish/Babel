@@ -115,12 +115,13 @@ $page->addTranslation($otherPage[, $overwrite]);
 The `$otherPage` argument should be a `Page` object. The language of the page
 will be determined by Babel itself based on under which language section the 
 page is located.
+
 The `$overwrite` argument is optional and has three case scenarios:
--- If omitted the reverse link of the translation will be created only 
+- If omitted the reverse link of the translation will be created only 
 if the `$otherPage` does not have a translation link for the `$page->language`. 
--- If set to `true` the reverse link will be overwitten even if `$otherPage`
+- If set to `true` the reverse link will be overwitten even if `$otherPage`
 does have a translation link for the `$page->language`.
--- If set to `false` the reverse translation link will not be created even if
+- If set to `false` the reverse translation link will not be created even if
 the `$otherPage` does not have any translation links.
 ##### Return
 `boolean` if the translation link/s is/are created successfully or not.
@@ -135,6 +136,7 @@ $page->removeTranslation($language[, $remove]);
 ```
 #####Arguments
 `$language` (`string|integer|Language`) The language link you wish to remove.
+
 `$remove` (`boolean`) If there is a reverse link that points back from the 
 translation to this page, should Babel remove it too. Default is `false`.
 ##### Throws
@@ -198,13 +200,18 @@ $modules->get('Babel')->getTranslated($fromLanguage, $toLanguage[, $limit[, $pag
 #####Arguments
 `$fromLanguage` (`string|integer|Language`) The language __from__ which the translation is.
 If omitted (or `null` given) then all the translation __from__ all languages will be considered.
+
 `$toLanguage` (`string|integer|Language`) The language __to__ which the translation is.
 If omitted (or `null` given) then translation __to__ all languages will be considered.
+
 `$limit` is the number of pages you want to recieve. Default is 50.
+
 `$pageNum` is the page number. Use for pagination of the returned `PageArray`.
  Default is 1.
+
 #####Throws
 Throws `WireException` if the language couldn't be found or is not handled by Babel.
+
 #####Return
 `PageArray`.
 
@@ -218,13 +225,18 @@ $modules->get('Babel')->getUntranslated($fromLanguage, $toLanguage[, $limit[, $p
 `$fromLanguage` (`string|integer|Language`) The language __from__ which there is no translation.
 If omitted (or `null` given) then all the untranslated pages __from__ any language will be
 considered.
+
 `$toLanguage` (`string|integer|Language`) The language __to__ which there is no translation.
 If omitted (or `null` given) then untranslated pages __to__ any language will be considered.
+
 `$limit` is the number of pages you want to recieve. Default is 50.
+
 `$pageNum` is the page number.  Use for pagination of the returned PageArray.
 Default is 1.
+
 #####Throws
 Throws `WireException` if the language couldn't be found or is not handled by Babel.
+
 #####Return
 `PageArray`.
 
