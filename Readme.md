@@ -94,7 +94,7 @@ The method returns a `Page` object or `NullPage` if the translation is not avail
 
 ### translations (Page method)
 This method will return the pages that were assigned as a translation for all 
-`$languages` that available for that page. Or an empty `PageArray` if no 
+`$languages` that are available for that page. Or an empty `PageArray` if no 
 translations are available.
 #####Syntax
 ```php
@@ -107,11 +107,11 @@ Returns `PageArray`.
 
 ### addTranslation (Page method)
 This method will create a translation link from `$page` to `$otherPage`.
-##### Syntax
+#####Syntax
 ```php
 $page->addTranslation($otherPage[, $overwrite]);
 ```
-##### Arguments
+#####Arguments
 The `$otherPage` argument should be a `Page` object. The language of the page
 will be determined by Babel itself based on under which language section the 
 page is located.
@@ -123,7 +123,8 @@ if the `$otherPage` does not have a translation link for the `$page->language`.
 does have a translation link for the `$page->language`.
 - If set to `false` the reverse translation link will not be created even if
 the `$otherPage` does not have any translation links.
-##### Return
+
+#####Return
 `boolean` if the translation link/s is/are created successfully or not.
 
 
@@ -165,7 +166,7 @@ Throws `WireException` if the language couldn't be found or is not handled by Ba
 ### getRoot (Babel method)
 Returns the rootPage of the language. The one you have assigned in the module settings
 page.
-#####Syntaxt
+#####Syntax
 ```php
 $modules->get('Babel')->getRoot($language);
 ```
@@ -204,7 +205,7 @@ If omitted (or `null` given) then all the translation __from__ all languages wil
 `$toLanguage` (`string|integer|Language`) The language __to__ which the translation is.
 If omitted (or `null` given) then translation __to__ all languages will be considered.
 
-`$limit` is the number of pages you want to recieve. Default is 50.
+`$limit` is the number of pages you want to receive. Default is 50.
 
 `$pageNum` is the page number. Use for pagination of the returned `PageArray`.
  Default is 1.
@@ -229,7 +230,7 @@ considered.
 `$toLanguage` (`string|integer|Language`) The language __to__ which there is no translation.
 If omitted (or `null` given) then untranslated pages __to__ any language will be considered.
 
-`$limit` is the number of pages you want to recieve. Default is 50.
+`$limit` is the number of pages you want to receive. Default is 50.
 
 `$pageNum` is the page number.  Use for pagination of the returned PageArray.
 Default is 1.
@@ -263,6 +264,15 @@ $session->redirect($config->babelHomePage->url, false);
 
 ```
 that's pretty much everything you need to have in your `root.php` file.
+
+To display links for each language homepage...
+```php
+$home = $config->babelHomePage;
+$homePages = $home->translations()->and($home);
+echo "<ul>";
+foreach ($homePages as $p) echo "<li><a href='$p->url'></a></li>";
+echo "</ul>";
+```
 
 
 ##ProcessBabelTranslate
