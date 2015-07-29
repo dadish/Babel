@@ -79,7 +79,7 @@ class Babel extends WireData implements Module, ConfigurableModule {
     foreach ($this->include as $name) $langs[] = $this->getRoot($name)->name;
     $home = $page->rootParent();
     
-    if (!in_array($home->name, $langs)) {
+    if (!in_array($home->name, $langs) || $home->id === 1) {
       if ($session->babel_home && in_array($session->babel_home, $langs)) {
         $home = $pages->get("/$session->babel_home/");
       }else {
