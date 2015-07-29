@@ -270,10 +270,22 @@ To display links for each language homepage...
 $home = $config->babelHomePage;
 $homePages = $home->translations()->and($home);
 echo "<ul>";
-foreach ($homePages as $p) echo "<li><a href='$p->url'></a></li>";
+foreach ($homePages as $p) {
+  $title = $p->language->title;
+  echo "<li><a href='$p->url'>$title</a></li>";
+}
 echo "</ul>";
 ```
 
+To display links for each language for the current page...
+```php
+echo "<ul>";
+foreach ($page->translations() as $p) {
+  $title = $p->language->title;
+  echo "<li><a href='$p->url'>$title</a></li>";
+}
+echo "</ul>";
+```
 
 ##ProcessBabelTranslate
 Babel comes with very useful admin helper. You can link pages as a translation for
